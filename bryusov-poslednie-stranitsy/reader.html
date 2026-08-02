@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Синхронное чтение</title>
+<style>
+  body {
+    font-family: Georgia, 'Times New Roman', serif;
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 0 24px 140px;
+    background: #fdfcf9;
+    color: #222;
+  }
+  #controls {
+    font-family: sans-serif;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 16px 0;
+    border-bottom: 1px solid #ddd;
+    position: sticky;
+    top: 0;
+    background: #fdfcf9;
+    z-index: 10;
+  }
+  #controls.collapsed { padding: 0; border-bottom: none; }
+  #controls.collapsed #controlsBody { display: none; }
+  #toggleControls {
+    align-self: flex-end;
+    font-family: sans-serif;
+    font-size: 12px;
+    color: #888;
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 4px 8px;
+  }
+  #toggleControls:hover { color: #333; }
+  #status { font-size: 13px; color: #666; }
+  #chapterNav { display: flex; gap: 6px; flex-wrap: wrap; }
+  #chapterNav button {
+    font-family: sans-serif;
+    padding: 4px 10px; border-radius: 6px; border: 1px solid #ccc;
+    background: #f4f4f4; cursor: pointer; font-size: 13px;
+  }
+  #chapterNav button.current { background: #ffe08a; border-color: #e0b84a; }
+  a.backLink {
+    font-family: sans-serif;
+    font-size: 13px;
+    color: #888;
+    text-decoration: none;
+  }
+  a.backLink:hover { color: #333; }
+
+  #book { padding-top: 24px; font-size: var(--book-font-size, 19px); }
+  .chapter-num {
+    text-align: center;
+    font-size: calc(var(--book-font-size, 19px) * 1.8);
+    font-weight: normal;
+    letter-spacing: 4px;
+    margin: 2.5rem 0 1.5rem;
+  }
+  p.para {
+    font-size: var(--book-font-size, 19px);
+    line-height: 1.8;
+    text-indent: 1.5em;
+    margin: 0 0 0.9em;
+  }
+  p.aside { font-style: italic; text-indent: 0; color: #555; }
+  .word { padding: 1px 1px; border-radius: 3px; }
+  .active { background: #f0a93c; }
+  .sentence { border-radius: 6px; transition: background 0.15s; }
+  .sentence.sentence-active { background: #fff0cc; }
+  .word.user-highlight { background: #b9e8a8; }
+  .word.user-highlight.active { background: #f0a93c; }
+
+  #extraControls button {
+    font-family: sans-serif;
+    font-size: 13px;
+    padding: 4px 10px;
+    border-radius: 6px;
+    border: 1px solid #ccc;
+    background: #f4f4f4;
+    cursor: pointer;
+  }
+  #book.highlight-mode { cursor: text; }
+  #extraControls { display: flex; gap: 20px; align-items: center; margin-top: 10px; font-size: 13px; flex-wrap: wrap; }
+  #extraControls label { display: flex; align-items: center; gap: 6px; }
+
+  #playerBar {
+    position: sticky;
+    bottom: 0;
+    background: #fdfcf9;
+    border-top: 1px solid #ddd;
+    padding: 10px 0;
+    font-family: sans-serif;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  audio { width: 100%; }
+  #highlightModeBtn {
+    align-self: flex-start;
+    font-family: sans-serif;
+    font-size: 13px;
+    padding: 4px 10px;
+    border-radius: 6px;
+    border: 1px solid #ccc;
+    background: #f4f4f4;
+    cursor: pointer;
+  }
+  #highlightModeBtn.on { background: #b9e8a8; border-color: #6cbf4f; }
+</style>
+</head>
+<body>
+
+<div id="controls">
+  <a class="backLink" href="../index.html">← ко всем книгам</a>
+  <button id="toggleControls" title="Свернуть/развернуть панель">▲ Свернуть панель</button>
+  <div id="controlsBody">
+    <span id="status">Загружаю книгу…</span>
+    <div id="chapterNav"></div>
+    <div id="extraControls">
+      <label>Размер текста:
+        <input type="range" id="fontSizeSlider" min="14" max="32" value="19" step="1">
+        <span id="fontSizeVal">19px</span>
+      </label>
+      <label>Скорость:
+        <select id="speedSelect">
+          <option value="0.75">0.75×</option>
+          <option value="1" selected>1×</option>
+          <option value="1.25">1.25×</option>
+          <option value="1.5">1.5×</option>
+          <option value="1.75">1.75×</option>
+          <option value="2">2×</option>
+        </select>
+      </label>
+      <button id="clearHighlightsBtn" type="button">Очистить выделения главы</button>
+    </div>
+  </div>
+</div>
+
+<div id="book"></div>
+
+<div id="playerBar">
+  <button id="highlightModeBtn" type="button">🖊 Маркер: выкл</button>
+  <audio id="player" controls></audio>
+</div>
+
+<script>
+// Серверный режим: manifest.json и аудио лежат рядом с этой страницей
+// (audio-файлы — в подпапке audio/), поэтому просто подгружаем их по
+// относительным путям, без диалогов выбора файлов.
+const MANIFEST_URL = 'manifest.json';
+const AUDIO_DIR = 'audio/';
+
+let manifest = null;
+let currentChapter = -1;
+let currentWordIdx = -1;
+let currentSentenceId = null;
+let wordToSentence = {};
+
+const audioEl = document.getElementById('player');
+const bookEl = document.getElementById('book');
+const statusEl = document.getElementById('status');
+const navEl = document.getElementById('chapterNav');
+
+document.getElementById('fontSizeSlider').addEventListener('input', (e) => {
+  const size = e.target.value + 'px';
+  document.documentElement.style.setProperty('--book-font-size', size);
+  document.getElementById('fontSizeVal').textContent = size;
+});
+
+document.getElementById('speedSelect').addEventListener('change', (e) => {
+  audioEl.playbackRate = parseFloat(e.target.value);
+});
+
+const controlsEl = document.getElementById('controls');
+const toggleBtn = document.getElementById('toggleControls');
+
+function setControlsCollapsed(collapsed) {
+  controlsEl.classList.toggle('collapsed', collapsed);
+  toggleBtn.textContent = collapsed ? '▼ Показать панель' : '▲ Свернуть панель';
+}
+
+toggleBtn.addEventListener('click', () => {
+  setControlsCollapsed(!controlsEl.classList.contains('collapsed'));
+});
+
+async function start() {
+  try {
+    const resp = await fetch(MANIFEST_URL);
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    manifest = await resp.json();
+  } catch (e) {
+    statusEl.textContent = 'Не удалось загрузить manifest.json: ' + e.message;
+    return;
+  }
+  renderNav();
+  loadChapter(0);
+  setControlsCollapsed(true);
+}
+
+function renderNav() {
+  navEl.innerHTML = '';
+  manifest.chapters.forEach((ch, i) => {
+    const btn = document.createElement('button');
+    btn.textContent = `Глава ${i + 1}`;
+    btn.id = 'navbtn' + i;
+    btn.onclick = () => loadChapter(i);
+    navEl.appendChild(btn);
+  });
+}
+
+function isChapterHeading(p) {
+  return /^[IVXLCDM]+$/.test(p.trim());
+}
+
+function isAside(p) {
+  const words = p.trim().split(/\s+/);
+  if (words.length > 4) return false;
+  return !/[.!?…]$/.test(p.trim()) && !p.trim().startsWith('—');
+}
+
+function loadChapter(idx) {
+  if (idx >= manifest.chapters.length) {
+    statusEl.textContent = 'Книга закончена.';
+    return;
+  }
+  const chapter = manifest.chapters[idx];
+
+  currentChapter = idx;
+  currentWordIdx = -1;
+  currentSentenceId = null;
+  audioEl.src = AUDIO_DIR + encodeURIComponent(chapter.audio_file);
+  audioEl.playbackRate = parseFloat(document.getElementById('speedSelect').value);
+  audioEl.play().catch(() => {});
+
+  renderBook(chapter.paragraphs || [], chapter.words || []);
+  restoreHighlights(chapter.audio_file);
+  statusEl.textContent = `Глава ${idx + 1} из ${manifest.chapters.length}`;
+
+  document.querySelectorAll('#chapterNav button').forEach(b => b.classList.remove('current'));
+  document.getElementById('navbtn' + idx)?.classList.add('current');
+}
+
+function consumeByLength(text, words, cursor) {
+  const targetLen = text.replace(/\s+/g, '').length;
+  let consumedLen = 0;
+  let n = 0;
+  while (cursor + n < words.length && consumedLen < targetLen) {
+    consumedLen += (words[cursor + n].word || '').replace(/\s+/g, '').length;
+    n += 1;
+  }
+  if (n === 0 && cursor < words.length) n = 1;
+  return n;
+}
+
+function renderBook(paragraphs, words) {
+  let cursor = 0;
+  let sentenceCounter = 0;
+  wordToSentence = {};
+
+  const html = paragraphs.map(p => {
+    const n = consumeByLength(p, words, cursor);
+    const paraEnd = cursor + n;
+
+    const sentenceTexts = p.match(/[^.!?…]+[.!?…]*/g) || [p];
+    let localCursor = cursor;
+    const sentenceHtmlParts = [];
+
+    for (const sentText of sentenceTexts) {
+      if (localCursor >= paraEnd) break;
+      const sn = Math.min(consumeByLength(sentText, words, localCursor), paraEnd - localCursor);
+      const sentWords = words.slice(localCursor, localCursor + sn);
+      const sid = 's' + sentenceCounter++;
+
+      const wordSpans = sentWords.map((w, i) => {
+        const globalIdx = localCursor + i;
+        wordToSentence[globalIdx] = sid;
+        return `<span class="word" id="w${globalIdx}">${w.word}</span>`;
+      }).join(' ');
+
+      sentenceHtmlParts.push(`<span class="sentence" id="${sid}">${wordSpans}</span>`);
+      localCursor += sn;
+    }
+
+    cursor = paraEnd;
+    const spans = sentenceHtmlParts.join(' ');
+
+    if (isChapterHeading(p)) return `<h2 class="chapter-num">${spans}</h2>`;
+    if (isAside(p)) return `<p class="para aside">${spans}</p>`;
+    return `<p class="para">${spans}</p>`;
+  }).join('');
+
+  bookEl.innerHTML = html;
+}
+
+audioEl.addEventListener('timeupdate', function () {
+  if (currentChapter < 0) return;
+  const words = manifest.chapters[currentChapter].words;
+  const t = this.currentTime;
+  const idx = words.findIndex(w => t >= w.start && t < w.end);
+  if (idx === -1 || idx === currentWordIdx) return;
+  if (currentWordIdx >= 0) document.getElementById('w' + currentWordIdx)?.classList.remove('active');
+  const el = document.getElementById('w' + idx);
+  if (el) {
+    el.classList.add('active');
+    keepWordInView(el);
+  }
+  currentWordIdx = idx;
+
+  const newSentenceId = wordToSentence[idx];
+  if (newSentenceId && newSentenceId !== currentSentenceId) {
+    if (currentSentenceId) document.getElementById(currentSentenceId)?.classList.remove('sentence-active');
+    document.getElementById(newSentenceId)?.classList.add('sentence-active');
+    currentSentenceId = newSentenceId;
+  }
+});
+
+function keepWordInView(el) {
+  const rect = el.getBoundingClientRect();
+  const margin = window.innerHeight * 0.28;
+  const topBound = margin;
+  const bottomBound = window.innerHeight - margin;
+  if (rect.top < topBound || rect.bottom > bottomBound) {
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+}
+
+audioEl.addEventListener('ended', () => {
+  loadChapter(currentChapter + 1);
+});
+
+// ---------- Маркер (выделение текста) ----------
+
+let highlightModeOn = false;
+
+function highlightStorageKey(audioFileName) {
+  return 'highlights::' + (manifest?.book_id || location.pathname) + '::' + audioFileName;
+}
+
+function getHighlightSet(audioFileName) {
+  try {
+    const raw = localStorage.getItem(highlightStorageKey(audioFileName));
+    return raw ? new Set(JSON.parse(raw)) : new Set();
+  } catch (e) {
+    return new Set();
+  }
+}
+
+function saveHighlightSet(audioFileName, set) {
+  try {
+    localStorage.setItem(highlightStorageKey(audioFileName), JSON.stringify(Array.from(set)));
+  } catch (e) {}
+}
+
+function restoreHighlights(audioFileName) {
+  const set = getHighlightSet(audioFileName);
+  set.forEach(idx => {
+    document.getElementById('w' + idx)?.classList.add('user-highlight');
+  });
+}
+
+const highlightBtn = document.getElementById('highlightModeBtn');
+const clearHighlightsBtn = document.getElementById('clearHighlightsBtn');
+
+highlightBtn.addEventListener('click', () => {
+  highlightModeOn = !highlightModeOn;
+  highlightBtn.textContent = highlightModeOn ? '🖊 Маркер: вкл' : '🖊 Маркер: выкл';
+  highlightBtn.classList.toggle('on', highlightModeOn);
+  bookEl.classList.toggle('highlight-mode', highlightModeOn);
+});
+
+clearHighlightsBtn.addEventListener('click', () => {
+  if (currentChapter < 0) return;
+  const audioFileName = manifest.chapters[currentChapter].audio_file;
+  saveHighlightSet(audioFileName, new Set());
+  document.querySelectorAll('#book .word.user-highlight').forEach(el => el.classList.remove('user-highlight'));
+});
+
+function wordIndexFromNode(node) {
+  let el = node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
+  while (el && el !== bookEl) {
+    if (el.classList && el.classList.contains('word') && el.id.startsWith('w')) {
+      return parseInt(el.id.slice(1), 10);
+    }
+    el = el.parentElement;
+  }
+  return null;
+}
+
+function handleHighlightSelection() {
+  if (!highlightModeOn || currentChapter < 0) return;
+  const selection = window.getSelection();
+  if (!selection || selection.isCollapsed || selection.rangeCount === 0) return;
+
+  const startIdx = wordIndexFromNode(selection.anchorNode);
+  const endIdx = wordIndexFromNode(selection.focusNode);
+  selection.removeAllRanges();
+  if (startIdx === null || endIdx === null) return;
+
+  const from = Math.min(startIdx, endIdx);
+  const to = Math.max(startIdx, endIdx);
+
+  const audioFileName = manifest.chapters[currentChapter].audio_file;
+  const set = getHighlightSet(audioFileName);
+
+  let allHighlighted = true;
+  for (let i = from; i <= to; i++) {
+    if (!set.has(i)) { allHighlighted = false; break; }
+  }
+
+  for (let i = from; i <= to; i++) {
+    const el = document.getElementById('w' + i);
+    if (allHighlighted) {
+      set.delete(i);
+      el?.classList.remove('user-highlight');
+    } else {
+      set.add(i);
+      el?.classList.add('user-highlight');
+    }
+  }
+
+  saveHighlightSet(audioFileName, set);
+}
+
+document.addEventListener('mouseup', handleHighlightSelection);
+document.addEventListener('touchend', handleHighlightSelection);
+
+start();
+</script>
+</body>
+</html>
