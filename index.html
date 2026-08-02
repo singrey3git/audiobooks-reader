@@ -3,11 +3,14 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>Аудиокниги с синхронным текстом</title>
 <style>
   body {
     font-family: Georgia, 'Times New Roman', serif;
-    max-width: 720px;
+    max-width: 760px;
     margin: 0 auto;
     padding: 40px 24px;
     background: #fdfcf9;
@@ -17,7 +20,8 @@
   .subtitle { font-family: sans-serif; font-size: 14px; color: #888; margin-bottom: 32px; }
   .book-list { display: flex; flex-direction: column; gap: 16px; }
   .book-card {
-    display: block;
+    display: flex;
+    gap: 20px;
     padding: 20px 24px;
     border: 1px solid #e2ddd2;
     border-radius: 10px;
@@ -27,8 +31,29 @@
     transition: border-color 0.15s, transform 0.15s;
   }
   .book-card:hover { border-color: #d0a94a; transform: translateY(-1px); }
-  .book-title { font-size: 20px; margin: 0 0 4px; }
-  .book-meta { font-family: sans-serif; font-size: 13px; color: #888; }
+  .book-cover {
+    width: 84px;
+    height: 120px;
+    flex-shrink: 0;
+    object-fit: cover;
+    border-radius: 4px;
+    background: #eee5d0;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+  }
+  .book-cover.placeholder {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: sans-serif;
+    font-size: 11px;
+    color: #a99a6f;
+    text-align: center;
+    padding: 8px;
+  }
+  .book-info { display: flex; flex-direction: column; justify-content: center; }
+  .book-title { font-size: 19px; margin: 0 0 4px; line-height: 1.3; }
+  .book-author { font-family: sans-serif; font-size: 14px; color: #555; margin-bottom: 6px; }
+  .book-meta { font-family: sans-serif; font-size: 12px; color: #999; }
 </style>
 </head>
 <body>
@@ -36,12 +61,74 @@
 <h1>Аудиокниги с синхронным текстом</h1>
 <div class="subtitle">Тексты общественного достояния — читать и слушать одновременно</div>
 
-<div class="book-list">
-  <a class="book-card" href="bryusov-poslednie-stranitsy/reader.html">
-    <div class="book-title">Валерий Брюсов — «Последние страницы из дневника женщины»</div>
-    <div class="book-meta">5 глав · читает Екатерина Егорова</div>
-  </a>
-</div>
+<div class="book-list" id="bookList"></div>
+
+<script>
+// ---------------------------------------------------------------
+// Чтобы добавить новую книгу — допишите один объект в этот массив.
+// cover необязателен: если файла обложки нет, покажется заглушка.
+// ---------------------------------------------------------------
+const books = [
+  {
+    title: "«Последние страницы из дневника женщины»",
+    author: "Валерий Брюсов",
+    year: 1910,
+    narrator: "Екатерина Егорова",
+    partsCount: 5,
+    cover: "bryusov-poslednie-stranitsy/cover.jpg",
+    link: "bryusov-poslednie-stranitsy/reader.html",
+  },
+  // { title: "...", author: "...", year: ..., narrator: "...", partsCount: ..., cover: "...", link: "..." },
+];
+
+const listEl = document.getElementById('bookList');
+
+books.forEach(book => {
+  const a = document.createElement('a');
+  a.className = 'book-card';
+  a.href = book.link;
+
+  const img = document.createElement('img');
+  img.className = 'book-cover';
+  img.src = book.cover || '';
+  img.alt = book.title;
+  img.onerror = () => {
+    img.onerror = null;
+    img.removeAttribute('src');
+    img.classList.add('placeholder');
+    img.textContent = '';
+    const span = document.createElement('span');
+    span.textContent = book.title;
+    img.appendChild(span);
+  };
+
+  const info = document.createElement('div');
+  info.className = 'book-info';
+
+  const metaParts = [];
+  if (book.partsCount) metaParts.push(`${book.partsCount} ${partsLabel(book.partsCount)}`);
+  if (book.narrator) metaParts.push(`читает ${book.narrator}`);
+  if (book.year) metaParts.push(`${book.year} г.`);
+
+  info.innerHTML = `
+    <div class="book-title">${book.title}</div>
+    <div class="book-author">${book.author || ''}</div>
+    <div class="book-meta">${metaParts.join(' · ')}</div>
+  `;
+
+  a.appendChild(img);
+  a.appendChild(info);
+  listEl.appendChild(a);
+});
+
+function partsLabel(n) {
+  const mod10 = n % 10;
+  const mod100 = n % 100;
+  if (mod10 === 1 && mod100 !== 11) return 'часть';
+  if ([2, 3, 4].includes(mod10) && ![12, 13, 14].includes(mod100)) return 'части';
+  return 'частей';
+}
+</script>
 
 </body>
 </html>

@@ -3,6 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>Синхронное чтение</title>
 <style>
   body {
@@ -70,11 +73,43 @@
   }
   p.aside { font-style: italic; text-indent: 0; color: #555; }
   .word { padding: 1px 1px; border-radius: 3px; }
-  .active { background: #f0a93c; }
+  .word.active { background: #f0a93c !important; }
   .sentence { border-radius: 6px; transition: background 0.15s; }
   .sentence.sentence-active { background: #fff0cc; }
-  .word.user-highlight { background: #b9e8a8; }
-  .word.user-highlight.active { background: #f0a93c; }
+  .word.has-note { text-decoration: underline dotted; text-underline-offset: 3px; }
+
+  #notePopup {
+    position: fixed;
+    left: 0; right: 0; bottom: 0;
+    background: #fff;
+    border-top: 1px solid #ddd;
+    border-radius: 14px 14px 0 0;
+    box-shadow: 0 -4px 16px rgba(0,0,0,0.12);
+    padding: 16px 20px calc(16px + env(safe-area-inset-bottom));
+    font-family: sans-serif;
+    z-index: 100;
+    max-width: 720px;
+    margin: 0 auto;
+  }
+  #notePopup.hidden { display: none; }
+  #notePopupColors { display: flex; gap: 10px; margin-bottom: 10px; }
+  .colorSwatch {
+    width: 26px; height: 26px; border-radius: 50%;
+    border: 2px solid transparent; cursor: pointer; padding: 0;
+  }
+  .colorSwatch.selected { border-color: #333; }
+  #noteText {
+    width: 100%; min-height: 70px; box-sizing: border-box;
+    font-family: sans-serif; font-size: 14px; padding: 8px;
+    border: 1px solid #ccc; border-radius: 8px; resize: vertical;
+  }
+  #notePopupButtons { display: flex; gap: 8px; margin-top: 10px; }
+  #notePopupButtons button {
+    font-family: sans-serif; font-size: 13px; padding: 8px 14px;
+    border-radius: 6px; border: 1px solid #ccc; background: #f4f4f4; cursor: pointer;
+  }
+  #noteSaveBtn { background: #f0a93c; border-color: #d99429; font-weight: bold; }
+  #noteDeleteBtn { color: #b33; }
 
   #extraControls button {
     font-family: sans-serif;
@@ -137,12 +172,25 @@
           <option value="2">2×</option>
         </select>
       </label>
-      <button id="clearHighlightsBtn" type="button">Очистить выделения главы</button>
+      <button id="clearAllAnnotationsBtn" type="button">Очистить все заметки главы</button>
     </div>
   </div>
 </div>
 
 <div id="book"></div>
+
+<div id="notePopup" class="hidden">
+  <div id="notePopupColors">
+    <button class="colorSwatch" data-color="green" style="background:#b9e8a8" title="Зелёный"></button>
+    <button class="colorSwatch" data-color="blue" style="background:#a8d0f2" title="Синий"></button>
+  </div>
+  <textarea id="noteText" placeholder="Заметка (необязательно) — просто выделение тоже можно сохранить пустым"></textarea>
+  <div id="notePopupButtons">
+    <button id="noteSaveBtn" type="button">Сохранить</button>
+    <button id="noteDeleteBtn" type="button">Удалить выделение</button>
+    <button id="noteCancelBtn" type="button">Отмена</button>
+  </div>
+</div>
 
 <div id="playerBar">
   <button id="highlightModeBtn" type="button">🖊 Маркер: выкл</button>
@@ -207,7 +255,7 @@ function renderNav() {
   navEl.innerHTML = '';
   manifest.chapters.forEach((ch, i) => {
     const btn = document.createElement('button');
-    btn.textContent = `Глава ${i + 1}`;
+    btn.textContent = `Часть ${i + 1}`;
     btn.id = 'navbtn' + i;
     btn.onclick = () => loadChapter(i);
     navEl.appendChild(btn);
@@ -239,8 +287,8 @@ function loadChapter(idx) {
   audioEl.play().catch(() => {});
 
   renderBook(chapter.paragraphs || [], chapter.words || []);
-  restoreHighlights(chapter.audio_file);
-  statusEl.textContent = `Глава ${idx + 1} из ${manifest.chapters.length}`;
+  refreshAnnotations();
+  statusEl.textContent = `Часть ${idx + 1} из ${manifest.chapters.length}`;
 
   document.querySelectorAll('#chapterNav button').forEach(b => b.classList.remove('current'));
   document.getElementById('navbtn' + idx)?.classList.add('current');
@@ -334,38 +382,68 @@ audioEl.addEventListener('ended', () => {
   loadChapter(currentChapter + 1);
 });
 
-// ---------- Маркер (выделение текста) ----------
+// ---------- Маркер и заметки ----------
 
+const COLORS = { green: '#b9e8a8', blue: '#a8d0f2' };
 let highlightModeOn = false;
+let pendingAnnotation = null; // черновик, пока открыта панель заметки
 
-function highlightStorageKey(audioFileName) {
-  return 'highlights::' + (manifest?.book_id || location.pathname) + '::' + audioFileName;
+function annotationsKey(audioFileName) {
+  return 'annotations::' + (manifest?.book_id || location.pathname) + '::' + audioFileName;
 }
 
-function getHighlightSet(audioFileName) {
+function getAnnotations(audioFileName) {
   try {
-    const raw = localStorage.getItem(highlightStorageKey(audioFileName));
-    return raw ? new Set(JSON.parse(raw)) : new Set();
+    const raw = localStorage.getItem(annotationsKey(audioFileName));
+    return raw ? JSON.parse(raw) : [];
   } catch (e) {
-    return new Set();
+    return [];
   }
 }
 
-function saveHighlightSet(audioFileName, set) {
+function saveAnnotations(audioFileName, list) {
   try {
-    localStorage.setItem(highlightStorageKey(audioFileName), JSON.stringify(Array.from(set)));
+    localStorage.setItem(annotationsKey(audioFileName), JSON.stringify(list));
   } catch (e) {}
 }
 
-function restoreHighlights(audioFileName) {
-  const set = getHighlightSet(audioFileName);
-  set.forEach(idx => {
-    document.getElementById('w' + idx)?.classList.add('user-highlight');
+function clearAllAnnotationStyles() {
+  document.querySelectorAll('#book .word').forEach(el => {
+    el.style.backgroundColor = '';
+    el.classList.remove('has-note');
+    delete el.dataset.annId;
   });
 }
 
+function applyAnnotationsToDOM(audioFileName) {
+  const list = getAnnotations(audioFileName);
+  list.forEach(ann => {
+    for (let i = ann.from; i <= ann.to; i++) {
+      const el = document.getElementById('w' + i);
+      if (!el) continue;
+      el.style.backgroundColor = COLORS[ann.color] || COLORS.green;
+      el.dataset.annId = ann.id;
+      if (ann.note) el.classList.add('has-note');
+    }
+  });
+}
+
+function refreshAnnotations() {
+  if (currentChapter < 0) return;
+  clearAllAnnotationStyles();
+  applyAnnotationsToDOM(manifest.chapters[currentChapter].audio_file);
+}
+
+function findAnnotationForIndex(idx) {
+  if (currentChapter < 0) return null;
+  const list = getAnnotations(manifest.chapters[currentChapter].audio_file);
+  return list.find(a => idx >= a.from && idx <= a.to) || null;
+}
+
 const highlightBtn = document.getElementById('highlightModeBtn');
-const clearHighlightsBtn = document.getElementById('clearHighlightsBtn');
+const clearAllBtn = document.getElementById('clearAllAnnotationsBtn');
+const notePopup = document.getElementById('notePopup');
+const noteText = document.getElementById('noteText');
 
 highlightBtn.addEventListener('click', () => {
   highlightModeOn = !highlightModeOn;
@@ -374,11 +452,11 @@ highlightBtn.addEventListener('click', () => {
   bookEl.classList.toggle('highlight-mode', highlightModeOn);
 });
 
-clearHighlightsBtn.addEventListener('click', () => {
+clearAllBtn.addEventListener('click', () => {
   if (currentChapter < 0) return;
-  const audioFileName = manifest.chapters[currentChapter].audio_file;
-  saveHighlightSet(audioFileName, new Set());
-  document.querySelectorAll('#book .word.user-highlight').forEach(el => el.classList.remove('user-highlight'));
+  if (!confirm('Удалить все заметки и выделения в этой части?')) return;
+  saveAnnotations(manifest.chapters[currentChapter].audio_file, []);
+  refreshAnnotations();
 });
 
 function wordIndexFromNode(node) {
@@ -392,7 +470,52 @@ function wordIndexFromNode(node) {
   return null;
 }
 
-function handleHighlightSelection() {
+function showNotePopup() {
+  noteText.value = pendingAnnotation.note || '';
+  document.querySelectorAll('.colorSwatch').forEach(sw => {
+    sw.classList.toggle('selected', sw.dataset.color === pendingAnnotation.color);
+  });
+  notePopup.classList.remove('hidden');
+}
+
+function hideNotePopup() {
+  notePopup.classList.add('hidden');
+  pendingAnnotation = null;
+}
+
+document.querySelectorAll('.colorSwatch').forEach(sw => {
+  sw.addEventListener('click', () => {
+    if (!pendingAnnotation) return;
+    pendingAnnotation.color = sw.dataset.color;
+    document.querySelectorAll('.colorSwatch').forEach(s => s.classList.remove('selected'));
+    sw.classList.add('selected');
+  });
+});
+
+document.getElementById('noteSaveBtn').addEventListener('click', () => {
+  if (!pendingAnnotation || currentChapter < 0) return;
+  pendingAnnotation.note = noteText.value.trim();
+  const audioFileName = manifest.chapters[currentChapter].audio_file;
+  const list = getAnnotations(audioFileName).filter(a => a.id !== pendingAnnotation.id);
+  list.push(pendingAnnotation);
+  saveAnnotations(audioFileName, list);
+  refreshAnnotations();
+  hideNotePopup();
+});
+
+document.getElementById('noteDeleteBtn').addEventListener('click', () => {
+  if (!pendingAnnotation || currentChapter < 0) return;
+  const audioFileName = manifest.chapters[currentChapter].audio_file;
+  const list = getAnnotations(audioFileName).filter(a => a.id !== pendingAnnotation.id);
+  saveAnnotations(audioFileName, list);
+  refreshAnnotations();
+  hideNotePopup();
+});
+
+document.getElementById('noteCancelBtn').addEventListener('click', hideNotePopup);
+
+// Выделение текста (drag) в режиме маркера -> открыть заметку для НОВОГО выделения
+function handleTextSelection() {
   if (!highlightModeOn || currentChapter < 0) return;
   const selection = window.getSelection();
   if (!selection || selection.isCollapsed || selection.rangeCount === 0) return;
@@ -402,33 +525,31 @@ function handleHighlightSelection() {
   selection.removeAllRanges();
   if (startIdx === null || endIdx === null) return;
 
-  const from = Math.min(startIdx, endIdx);
-  const to = Math.max(startIdx, endIdx);
-
-  const audioFileName = manifest.chapters[currentChapter].audio_file;
-  const set = getHighlightSet(audioFileName);
-
-  let allHighlighted = true;
-  for (let i = from; i <= to; i++) {
-    if (!set.has(i)) { allHighlighted = false; break; }
-  }
-
-  for (let i = from; i <= to; i++) {
-    const el = document.getElementById('w' + i);
-    if (allHighlighted) {
-      set.delete(i);
-      el?.classList.remove('user-highlight');
-    } else {
-      set.add(i);
-      el?.classList.add('user-highlight');
-    }
-  }
-
-  saveHighlightSet(audioFileName, set);
+  pendingAnnotation = {
+    id: 'ann_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
+    from: Math.min(startIdx, endIdx),
+    to: Math.max(startIdx, endIdx),
+    color: 'green',
+    note: '',
+  };
+  showNotePopup();
 }
 
-document.addEventListener('mouseup', handleHighlightSelection);
-document.addEventListener('touchend', handleHighlightSelection);
+// Клик (без выделения) по уже отмеченному слову -> открыть заметку для РЕДАКТИРОВАНИЯ
+function handleWordClick(e) {
+  const selection = window.getSelection();
+  if (selection && !selection.isCollapsed) return; // это было выделение, не клик
+  const idx = wordIndexFromNode(e.target);
+  if (idx === null) return;
+  const ann = findAnnotationForIndex(idx);
+  if (!ann) return;
+  pendingAnnotation = Object.assign({}, ann);
+  showNotePopup();
+}
+
+document.addEventListener('mouseup', handleTextSelection);
+document.addEventListener('touchend', handleTextSelection);
+bookEl.addEventListener('click', handleWordClick);
 
 start();
 </script>
