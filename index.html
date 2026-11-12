@@ -67,9 +67,6 @@
   details[open] > summary .fp-caret { transform: rotate(90deg); }
   .fp-sw { width: 11px; height: 11px; border-radius: 50%; flex-shrink: 0; }
   .fp-name { flex: 1; }
-  .fp-side { display: inline-flex; gap: 2px; }
-  .fp-side button { font-size: 11px; padding: 2px 6px; border: 1px solid var(--line); background: #fff; color: #bbb; border-radius: 5px; cursor: pointer; }
-  .fp-side button.on { background: #f6eed7; border-color: var(--gold); color: #6b5a22; }
   .fp-count { color: #aaa; font-size: 12px; }
   .fp-books { padding: 2px 10px 8px 34px; display: flex; flex-direction: column; gap: 5px; }
   .fp-books label { font-size: 12.5px; color: #444; }
@@ -109,18 +106,23 @@
   }
 
   .life {
-    position: absolute; border-radius: 6px;
+    position: absolute; border-radius: 8px;
+    display: flex; align-items: center;
     background: color-mix(in srgb, var(--c) 45%, #fff);
     border: 1px solid color-mix(in srgb, var(--c) 80%, #fff);
     z-index: 2;
   }
   .life.ongoing { border-right-style: dashed; }
-  .life-wrap { position: absolute; z-index: 2; pointer-events: none; }
+  .life.movable { cursor: grab; touch-action: none; }
+  .life.movable:hover { filter: brightness(.96); }
+  .life.grabbing { cursor: grabbing; box-shadow: 0 4px 14px rgba(0,0,0,.25); }
   .life-label {
-    position: sticky; left: 4px; display: inline-block;
-    font-family: sans-serif; font-size: 12px; line-height: 20px; color: #3b3320; white-space: nowrap;
+    position: sticky; left: 10px; display: block;
+    font-family: sans-serif; font-size: 12.5px; line-height: 1; color: #3b3320; white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis; pointer-events: none; user-select: none;
   }
-  .v .life-label { left: auto; top: 4px; writing-mode: vertical-rl; }
+  .v .life { flex-direction: column; }
+  .v .life-label { left: auto; top: 10px; writing-mode: vertical-rl; }
 
   .stem { position: absolute; background: var(--c); opacity: .5; }
   .dot {
@@ -313,27 +315,26 @@ function saveFilter() {
     }));
   } catch (e) {}
 }
-// сторона дорожки автора относительно оси: 'up' — сверху (слева), 'down' — снизу (справа)
-let sides = {};
-try { sides = JSON.parse(localStorage.getItem('booksSides') || '{}') || {}; } catch (e) {}
-function defaultSide(k) {
-  // по порядку рождения: каждого следующего — на ту сторону, где пока меньше книг
-  const order = Object.keys(authors).sort((a, b) => parseDate(authors[a].born).value - parseDate(authors[b].born).value);
-  const load = { up: 0, down: 0 };
-  for (const x of order) {
-    const side = load.up <= load.down ? 'up' : 'down';
-    if (x === k) return side;
-    load[side] += books.filter(bk => bk.author === x).length;
-  }
-  return 'up';
+// Порядок дорожек: order.up — сверху (слева) от оси, order.down — снизу (справа);
+// первый в списке — ближе всего к оси. Меняется перетаскиванием полосы жизни мышью.
+let order = { up: [], down: [] };
+try {
+  const o = JSON.parse(localStorage.getItem('booksOrder') || 'null');
+  if (o && Array.isArray(o.up) && Array.isArray(o.down)) order = o;
+} catch (e) {}
+function saveOrder() { try { localStorage.setItem('booksOrder', JSON.stringify(order)); } catch (e) {} }
+function normalizeOrder() {
+  const keys = Object.keys(authors);
+  order.up = order.up.filter(k => keys.includes(k));
+  order.down = order.down.filter(k => keys.includes(k));
+  const seen = new Set([...order.up, ...order.down]);
+  const cnt = side => order[side].reduce((n, k) => n + books.filter(b => b.author === k).length, 0);
+  keys.filter(k => !seen.has(k))
+    .sort((a, b) => parseDate(authors[a].born).value - parseDate(authors[b].born).value)
+    .forEach(k => order[cnt('up') <= cnt('down') ? 'up' : 'down'].push(k));   // новых — туда, где меньше книг
 }
-const sideOf = k => sides[k] === 'up' || sides[k] === 'down' ? sides[k] : defaultSide(k);
-function setSide(k, v) {
-  sides[k] = v;
-  try { localStorage.setItem('booksSides', JSON.stringify(sides)); } catch (e) {}
-  if (!viewport.classList.contains('hidden')) fitAll();
-  syncPanelStates();
-}
+normalizeOrder();
+const sideOf = k => order.up.includes(k) ? 'up' : 'down';
 const isVisible = b => !hiddenAuthors.has(b.author || '') && !hiddenBooks.has(bookKey(b)) && (!onlyVoiced || !!b.link);
 
 // ===============================================================
@@ -488,7 +489,8 @@ function put(cls, parent, m, c, ms, cs, text) {
   return e;
 }
 
-let axisCross = 0;   // координата оси поперёк (для центрирования при открытии)
+let axisCross = 0;
+let lastLayout = {};   // key -> {lo, hi}: где дорожка стоит по оси «поперёк»   // координата оси поперёк (для центрирования при открытии)
 
 function renderTimeline() {
   track.innerHTML = '';
@@ -496,13 +498,17 @@ function renderTimeline() {
   ensureRange();
   const total = Math.ceil(PAD() * 2 + (viewMax - viewMin) * scale);
   const BAND_NEG = 12, BAND_POS = isH() ? 30 : 56;     // зазор у оси: «над/слева» и «под/справа» (там подписи лет)
-  const LBL = 20, BARH = 12, HEAD = LBL + BARH, STEM = 12, GROUP_GAP = 22, LANE_GAP = 6, GAP = isH() ? 8 : 4;
+  const BARH = 24, HEAD = BARH, STEM = 12, GROUP_GAP = 22, LANE_GAP = 6, GAP = isH() ? 8 : 4;
   const maxLanes = isH() ? 6 : 3;
   const mainLen = b => isH() ? chipW(b) : CHIP_H;
 
   // ---- раскладка дорожек: каждый автор — по свою сторону оси ----
   const ext = { up: BAND_NEG, down: BAND_POS };
-  const layouts = groups.map(g => {
+  const byKey = Object.fromEntries(groups.map(g => [g.key, g]));
+  const ordered = [...order.up, ...order.down].map(k => byKey[k]).filter(Boolean)
+    .concat(groups.filter(g => !authors[g.key]));
+  lastLayout = {};
+  const layouts = ordered.map(g => {
     const groupW = Math.max(...g.books.map(chipW));
     const laneH = (isH() ? CHIP_H : groupW) + LANE_GAP;
     const lastEnd = [], items = [];
@@ -516,9 +522,10 @@ function renderTimeline() {
       else items.push({ b, p, start, lane: -1, len });          // не влезла — только точка
     });
     const lanes = Math.min(maxLanes, lastEnd.length);
-    const side = sideOf(g.key);
-    const L = { g, items, laneH, side, o0: ext[side] };
-    ext[side] += HEAD + (lanes ? STEM + lanes * laneH : 0) + GROUP_GAP;
+    const side = authors[g.key] ? sideOf(g.key) : 'down';
+    const size = HEAD + (lanes ? STEM + lanes * laneH : 0);
+    const L = { g, items, laneH, side, o0: ext[side], size };
+    ext[side] += size + GROUP_GAP;
     return L;
   });
   const half = Math.max(ext.up, ext.down, clientCross() / 2);
@@ -563,18 +570,22 @@ function renderTimeline() {
   }
 
   // ---- дорожки авторов ----
-  layouts.forEach(({ g, items, laneH, side, o0 }) => {
+  layouts.forEach(({ g, items, laneH, side, o0, size }) => {
     const col = g.color;
     const holder = document.createElement('div');
     holder.style.setProperty('--c', col);
     // cross-координата начала элемента: oEl — отступ от оси наружу, s — его размер поперёк
     const cc = (oEl, s) => side === 'down' ? axisC + o0 + oEl : axisC - (o0 + oEl + s);
+    lastLayout[g.key] = side === 'down' ? { lo: axisC + o0, hi: axisC + o0 + size } : { lo: axisC - o0 - size, hi: axisC - o0 };
 
     let s0, s1, label, title;
     if (g.born) {
       s0 = posOf(g.born.value);
       s1 = posOf(g.died ? g.died.value : TODAY);
-      label = `${g.author.name} · ${g.born.year}–${g.died ? g.died.year : ''}`;
+      const yrs = `${g.born.year}–${g.died ? g.died.year : ''}`;
+      const nm = g.author.name, sur = nm.split(' ').pop();
+      const fits = t => t.length * 7 + 24 <= Math.max(0, s1 - s0);          // влезает ли в полосу
+      label = [`${nm} · ${yrs}`, `${sur} · ${yrs}`, nm].find(fits) || nm;    // иначе — короче, вплоть до «…»
       title = `${g.author.name}: ${g.born.label} — ${g.died ? g.died.label : 'наши дни'}`;
     } else {
       s0 = items[0].p; s1 = items[items.length - 1].p;
@@ -582,19 +593,21 @@ function renderTimeline() {
       title = label;
     }
     const len = Math.max(6, s1 - s0);
-    const life = put('life' + (g.died || !g.born ? '' : ' ongoing'), holder, s0, cc(LBL, BARH), len, BARH);
-    life.title = title;
+    const life = put('life' + (g.died || !g.born ? '' : ' ongoing') + (authors[g.key] ? ' movable' : ''), holder, s0, cc(0, BARH), len, BARH);
+    life.title = title + (authors[g.key] ? '\nПотяните мышью, чтобы переставить относительно оси' : '');
+    const edge = isH() ? (side === 'down' ? 'Bottom' : 'Top') : (side === 'down' ? 'Right' : 'Left');
+    life.style['padding' + edge] = '6px';            // точки сидят на этом краю — подпись чуть в сторону
     if (label) {
-      const wrap = put('life-wrap', holder, s0, cc(0, LBL), len, LBL);
       const lb = document.createElement('span');
       lb.className = 'life-label';
       lb.textContent = label;
-      wrap.appendChild(lb);
+      if (isH()) lb.style.maxWidth = Math.max(0, len - 14) + 'px'; else lb.style.maxHeight = Math.max(0, len - 14) + 'px';
+      life.appendChild(lb);
     }
 
     items.forEach(({ b, p, start, lane, len }) => {
       const tip = `${b.title} — ${b._d.label}${b.link ? '' : ' (ещё не озвучена)'}`;
-      const dot = put('dot' + (lane < 0 ? ' small' : '') + (b.link ? '' : ' soon-dot'), holder, p, cc(LBL, BARH) + BARH / 2);
+      const dot = put('dot' + (lane < 0 ? ' small' : '') + (b.link ? '' : ' soon-dot'), holder, p, cc(BARH, 0));
       dot.title = tip;
       if (lane < 0) {
         dot.onclick = e => { e.stopPropagation(); setScale(scale * 3, p - scrollMain()); };
@@ -616,7 +629,56 @@ function renderTimeline() {
     });
     holder.style.display = 'contents';
     track.appendChild(holder);
+    if (authors[g.key]) attachAuthorDrag(life, g.key, Array.from(holder.children));
   });
+}
+
+// ---------- перетаскивание дорожки автора относительно оси ----------
+function attachAuthorDrag(bar, key, els) {
+  bar.addEventListener('pointerdown', e => {
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    e.stopPropagation(); e.preventDefault();       // не двигать сам холст
+    bar.setPointerCapture(e.pointerId);
+    const start = isH() ? e.clientY : e.clientX;
+    let d = 0;
+    bar.classList.add('grabbing');
+    els.forEach(el => el.style.zIndex = 8);
+    const mv = ev => {
+      d = (isH() ? ev.clientY : ev.clientX) - start;
+      els.forEach(el => { el.style.transform = isH() ? `translateY(${d}px)` : `translateX(${d}px)`; });
+    };
+    const up = () => {
+      bar.removeEventListener('pointermove', mv);
+      bar.removeEventListener('pointerup', up);
+      bar.removeEventListener('pointercancel', up);
+      bar.classList.remove('grabbing');
+      if (Math.abs(d) < 4) { els.forEach(el => { el.style.transform = ''; el.style.zIndex = ''; }); return; }
+      dropAuthor(key, d);
+    };
+    bar.addEventListener('pointermove', mv);
+    bar.addEventListener('pointerup', up);
+    bar.addEventListener('pointercancel', up);
+  });
+}
+function dropAuthor(key, d) {
+  const L = lastLayout[key];
+  const center = (L.lo + L.hi) / 2 + d;
+  const oldAxis = axisCross;
+  order.up = order.up.filter(k => k !== key);
+  order.down = order.down.filter(k => k !== key);
+  const side = center < axisCross ? 'up' : 'down';
+  const arr = order[side];
+  const dist = Math.abs(center - axisCross);
+  let idx = arr.length;
+  for (let i = 0; i < arr.length; i++) {
+    const o = lastLayout[arr[i]];
+    if (o && Math.abs((o.lo + o.hi) / 2 - axisCross) > dist) { idx = i; break; }
+  }
+  arr.splice(idx, 0, key);
+  saveOrder();
+  renderTimeline();
+  const shift = axisCross - oldAxis;               // ось могла сместиться — держим её на месте экрана
+  if (isH()) viewport.scrollTop += shift; else viewport.scrollLeft += shift;
 }
 
 // ---------- масштаб ----------
@@ -725,15 +787,6 @@ function buildPanel() {
       sum.insertAdjacentHTML('beforeend',
         `<span class="fp-sw" style="background:${authorColor[k]}"></span>
          <span class="fp-name"></span><span class="fp-count"></span><span class="fp-caret">▶</span>`);
-      const sd = document.createElement('span');
-      sd.className = 'fp-side';
-      ['up', 'down'].forEach(v => {
-        const bt = document.createElement('button');
-        bt.type = 'button'; bt.dataset.side = v;
-        bt.onclick = e => { e.preventDefault(); e.stopPropagation(); setSide(k, v); };
-        sd.appendChild(bt);
-      });
-      sum.insertBefore(sd, sum.querySelector('.fp-caret'));
       sum.querySelector('.fp-name').textContent = `${a.name} (${bd.year}–${dd ? dd.year : ''})`;
       sum.querySelector('.fp-count').textContent = voiced ? `${list.length} · озвучено ${voiced}` : `${list.length}`;
       det.appendChild(sum);
@@ -769,12 +822,6 @@ function syncPanelStates() {
     const list = books.filter(b => b.author === k);
     const cb = det.querySelector('.fp-author');
     const hiddenCount = list.filter(b => hiddenBooks.has(bookKey(b)) || (onlyVoiced && !b.link)).length;
-    det.querySelectorAll('.fp-side button').forEach(bt => {
-      const up = bt.dataset.side === 'up';
-      bt.textContent = isH() ? (up ? '▲' : '▼') : (up ? '◀' : '▶');
-      bt.title = isH() ? (up ? 'Разместить сверху от оси' : 'Разместить снизу от оси') : (up ? 'Разместить слева от оси' : 'Разместить справа от оси');
-      bt.classList.toggle('on', sideOf(k) === bt.dataset.side);
-    });
     cb.checked = !hiddenAuthors.has(k);
     cb.indeterminate = cb.checked && hiddenCount > 0;
     det.style.opacity = hiddenAuthors.has(k) ? .55 : 1;
