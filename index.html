@@ -19,10 +19,7 @@
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; background: var(--bg); }
-  body {
-    font-family: Georgia, 'Times New Roman', serif;
-    color: var(--ink);
-  }
+  body { font-family: Georgia, 'Times New Roman', serif; color: var(--ink); }
   body.tl { overflow: hidden; height: 100vh; }
 
   /* ---------- шапка ---------- */
@@ -44,7 +41,37 @@
   .toolbar button.active { background: #f6eed7; border-color: var(--gold); }
   .toolbar .spacer { flex: 1; }
   .toolbar .hint { color: var(--muted); font-size: 12px; }
-  @media (max-width: 1450px) { .toolbar .hint { display: none; } }
+  @media (max-width: 1500px) { .toolbar .hint { display: none; } }
+
+  /* ---------- панель «Авторы и книги» ---------- */
+  #filterPanel {
+    position: fixed; z-index: 30; top: calc(var(--hh) + 4px); right: 20px; width: 360px;
+    max-height: calc(100vh - var(--hh) - 20px); overflow-y: auto;
+    background: #fff; border: 1px solid var(--line); border-radius: 12px;
+    box-shadow: 0 8px 28px rgba(0,0,0,.16); padding: 10px 6px 8px;
+    font-family: sans-serif; font-size: 13px;
+  }
+  #filterPanel label { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+  #filterPanel input[type=checkbox] { width: 16px; height: 16px; flex-shrink: 0; accent-color: var(--gold); }
+  .fp-top { padding: 4px 10px 8px; border-bottom: 1px solid #f0ece0; margin-bottom: 4px; display: flex; flex-direction: column; gap: 8px; }
+  .fp-actions { display: flex; gap: 8px; }
+  .fp-actions button { font: inherit; font-size: 12px; padding: 4px 9px; border: 1px solid var(--line); background: #fafaf5; border-radius: 6px; cursor: pointer; }
+  #filterPanel details { border-radius: 8px; }
+  #filterPanel summary {
+    list-style: none; display: flex; align-items: center; gap: 8px;
+    padding: 7px 10px; cursor: pointer; border-radius: 8px;
+  }
+  #filterPanel summary::-webkit-details-marker { display: none; }
+  #filterPanel summary:hover { background: #faf7ee; }
+  .fp-caret { color: #aaa; font-size: 11px; transition: transform .15s; }
+  details[open] > summary .fp-caret { transform: rotate(90deg); }
+  .fp-sw { width: 11px; height: 11px; border-radius: 50%; flex-shrink: 0; }
+  .fp-name { flex: 1; }
+  .fp-count { color: #aaa; font-size: 12px; }
+  .fp-books { padding: 2px 10px 8px 34px; display: flex; flex-direction: column; gap: 5px; }
+  .fp-books label { font-size: 12.5px; color: #444; }
+  .fp-year { color: #aaa; margin-left: auto; font-size: 12px; }
+  .fp-tag { color: #6a9a5a; font-size: 11px; }
 
   /* ---------- линия времени: без рамки, на весь экран ---------- */
   #viewport {
@@ -84,6 +111,9 @@
   .v .today-label { writing-mode: vertical-rl; padding: 8px 0; line-height: 18px; }
   .today-label.left { transform: translateX(-100%); }
   .v .today-label.left { transform: translateY(-100%); }
+  .empty-msg {
+    position: absolute; font-family: sans-serif; font-size: 14px; color: #aaa; white-space: nowrap;
+  }
 
   .life {
     position: absolute; border-radius: 6px;
@@ -97,9 +127,9 @@
     position: sticky; left: 4px; display: inline-block;
     font-family: sans-serif; font-size: 12px; line-height: 20px; color: #3b3320; white-space: nowrap;
   }
-  .v .life-label { left: auto; top: 4px; writing-mode: vertical-rl; line-height: 20px; }
+  .v .life-label { left: auto; top: 4px; writing-mode: vertical-rl; }
 
-  .stem { position: absolute; background: var(--c); opacity: .55; }
+  .stem { position: absolute; background: var(--c); opacity: .5; }
   .dot {
     position: absolute; width: 12px; height: 12px; margin: -6px 0 0 -6px;
     border-radius: 50%; background: var(--c); border: 2px solid #fff;
@@ -108,31 +138,21 @@
   }
   .dot.small { cursor: pointer; }
   .dot.small:hover { transform: scale(1.35); }
+  .dot.soon-dot { background: #fff; box-shadow: 0 0 0 1.5px var(--c); }
 
-  .t-card {
+  /* компактная плашка: только название */
+  .chip {
     position: absolute; z-index: 2;
-    display: flex; gap: 10px; padding: 8px 10px;
-    border: 1px solid var(--line); border-left: 3px solid var(--c); border-radius: 8px; background: #fff;
-    text-decoration: none; color: inherit;
-    box-shadow: 0 1px 4px rgba(0,0,0,.06);
-    transition: box-shadow .15s;
-    overflow: hidden;
+    display: flex; align-items: center; padding: 0 9px;
+    border: 1px solid color-mix(in srgb, var(--c) 55%, #fff); border-left: 3px solid var(--c);
+    border-radius: 6px; background: #fff;
+    font-size: 13px; color: #2a261c; white-space: nowrap;
+    text-decoration: none;
+    overflow: hidden; text-overflow: ellipsis;
   }
-  a.t-card:hover { box-shadow: 0 3px 10px rgba(0,0,0,.14); z-index: 4; }
-  .t-card .book-cover { width: 50px; height: 72px; flex-shrink: 0; }
-  .t-card .book-info { min-width: 0; }
-  .t-card .book-title {
-    font-size: 14px; line-height: 1.25; margin: 0 0 3px;
-    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
-  }
-  .t-card .book-author { font-size: 12px; margin-bottom: 3px; }
-  .t-card .book-meta { font-size: 11px; }
-  .t-date { color: #a07d1c; font-weight: bold; }
-  .soon { border-style: dashed; border-left-style: solid; background: #fbfaf6; }
-  .soon .book-cover { opacity: .6; }
-  .book-cover.placeholder.empty { color: #bdb393; font-size: 11px; }
-  .soon .book-title, .soon .book-author { color: #777; }
-  .soon-tag { color: #aaa; }
+  a.chip { cursor: pointer; }
+  a.chip:hover { box-shadow: 0 2px 8px rgba(0,0,0,.18); z-index: 4; background: #fffdf5; }
+  .chip.soon { border-style: dashed; border-left-style: solid; background: #fbfaf6; color: #777; }
 
   /* ---------- список ---------- */
   #listWrap { max-width: 780px; margin: 0 auto; padding: 8px 24px 48px; }
@@ -154,6 +174,9 @@
     font-family: sans-serif; font-size: 10px; color: #a99a6f; text-align: center; padding: 4px;
     overflow: hidden;
   }
+  .book-cover.placeholder.empty { color: #bdb393; font-size: 11px; }
+  .book-card.soon .book-cover { opacity: .6; }
+  .book-card.soon .book-title, .book-card.soon .book-author { color: #777; }
   .book-info { display: flex; flex-direction: column; justify-content: center; }
   .book-title { font-size: 19px; margin: 0 0 4px; line-height: 1.3; }
   .book-author { font-family: sans-serif; font-size: 14px; color: #555; margin-bottom: 6px; }
@@ -172,6 +195,7 @@
       <button id="fitAll">Показать все</button>
       <span class="hint" id="hint">колесо / щипок — масштаб · перетаскивание — сдвиг</span>
       <span class="spacer"></span>
+      <button id="filterBtn">Авторы и книги ▾</button>
       <button id="orientH" class="active">↔ Горизонтально</button>
       <button id="orientV">↕ Вертикально</button>
       <button id="viewTimeline" class="active">Линия времени</button>
@@ -180,6 +204,8 @@
     <div class="subtitle">Тексты общественного достояния — читать и слушать одновременно</div>
   </div>
 </header>
+
+<div id="filterPanel" class="hidden"></div>
 
 <div id="viewport"><div id="track"></div></div>
 
@@ -193,49 +219,60 @@
 // Без died автор считается живущим (полоса жизни идёт до сегодняшнего дня).
 // ===============================================================
 const authors = {
+  austen:  { name: "Джейн Остин",      born: "1775-12-16", died: "1817-07-18" },
   bryusov: { name: "Валерий Брюсов",   born: "1873-12-13", died: "1924-10-09" },
   nabokov: { name: "Владимир Набоков", born: "1899-04-22", died: "1977-07-02" },
 };
 
 // Книги: author — ключ из authors; date — год первой публикации
 // ("1910" | "1910-05" | "1910-05-17"). Без link — серая плашка «ещё не озвучена».
-// cover необязателен: если файла обложки нет, покажется заглушка.
+// cover необязателен (виден в режиме «Список»).
 const books = [
+  // --- Джейн Остин (пока без озвучки) ---
+  { title: "«Разум и чувства»",          author: "austen", date: "1811" },
+  { title: "«Гордость и предубеждение»", author: "austen", date: "1813" },
+  { title: "«Мэнсфилд-парк»",            author: "austen", date: "1814" },
+  { title: "«Эмма»",                     author: "austen", date: "1815" },
+  { title: "«Нортенгерское аббатство»",  author: "austen", date: "1817" },
+  { title: "«Доводы рассудка»",          author: "austen", date: "1817" },
+  { title: "«Леди Сьюзен»",              author: "austen", date: "1871" },
+  { title: "«Сэндитон»",                 author: "austen", date: "1925" },
+
+  // --- Брюсов ---
   { title: "«Последние страницы из дневника женщины»", author: "bryusov", date: "1910",
     narrator: "Екатерина Егорова", partsCount: 5,
     cover: "bryusov-poslednie-stranitsy/cover.jpg", link: "bryusov-poslednie-stranitsy/reader.html" },
 
-  { title: "«Машенька»", author: "nabokov", date: "1926",
+  // --- Набоков ---
+  { title: "«Стихи»",                           author: "nabokov", date: "1916" },
+  { title: "«Гроздь»",                          author: "nabokov", date: "1922" },
+  { title: "«Горний путь»",                     author: "nabokov", date: "1923" },
+  { title: "«Машенька»",                        author: "nabokov", date: "1926",
     narrator: "Сергей Чонишвили", partsCount: 17,
     cover: "nabokov-mashenka/cover.jpg", link: "nabokov-mashenka/reader.html" },
-
-  // --- Набоков: остальные произведения (пока без озвучки) ---
-  { title: "«Стихи»",                              author: "nabokov", date: "1916" },
-  { title: "«Гроздь»",                             author: "nabokov", date: "1922" },
-  { title: "«Горний путь»",                        author: "nabokov", date: "1923" },
-  { title: "«Король, дама, валет»",                author: "nabokov", date: "1928" },
-  { title: "«Защита Лужина»",                      author: "nabokov", date: "1930" },
-  { title: "«Соглядатай»",                         author: "nabokov", date: "1930" },
-  { title: "«Подвиг»",                             author: "nabokov", date: "1932" },
-  { title: "«Камера обскура»",                     author: "nabokov", date: "1933" },
-  { title: "«Отчаяние»",                           author: "nabokov", date: "1936" },
-  { title: "«Приглашение на казнь»",               author: "nabokov", date: "1938" },
-  { title: "«Дар»",                                author: "nabokov", date: "1938" },
-  { title: "«Истинная жизнь Себастьяна Найта»",    author: "nabokov", date: "1941" },
-  { title: "«Николай Гоголь»",                     author: "nabokov", date: "1944" },
-  { title: "«Под знаком незаконнорождённых»",      author: "nabokov", date: "1947" },
-  { title: "«Память, говори»",                     author: "nabokov", date: "1951" },
-  { title: "«Другие берега»",                      author: "nabokov", date: "1954" },
-  { title: "«Лолита»",                             author: "nabokov", date: "1955" },
-  { title: "«Пнин»",                               author: "nabokov", date: "1957" },
-  { title: "«Бледное пламя»",                      author: "nabokov", date: "1962" },
-  { title: "«Ада, или Радости страсти»",           author: "nabokov", date: "1969" },
-  { title: "«Прозрачные вещи»",                    author: "nabokov", date: "1972" },
-  { title: "«Смотри на арлекинов!»",               author: "nabokov", date: "1974" },
-  { title: "«Подлинник Лауры»",                    author: "nabokov", date: "2009" },
+  { title: "«Король, дама, валет»",             author: "nabokov", date: "1928" },
+  { title: "«Защита Лужина»",                   author: "nabokov", date: "1930" },
+  { title: "«Соглядатай»",                      author: "nabokov", date: "1930" },
+  { title: "«Подвиг»",                          author: "nabokov", date: "1932" },
+  { title: "«Камера обскура»",                  author: "nabokov", date: "1933" },
+  { title: "«Отчаяние»",                        author: "nabokov", date: "1936" },
+  { title: "«Приглашение на казнь»",            author: "nabokov", date: "1938" },
+  { title: "«Дар»",                             author: "nabokov", date: "1938" },
+  { title: "«Истинная жизнь Себастьяна Найта»", author: "nabokov", date: "1941" },
+  { title: "«Николай Гоголь»",                  author: "nabokov", date: "1944" },
+  { title: "«Под знаком незаконнорождённых»",   author: "nabokov", date: "1947" },
+  { title: "«Память, говори»",                  author: "nabokov", date: "1951" },
+  { title: "«Другие берега»",                   author: "nabokov", date: "1954" },
+  { title: "«Лолита»",                          author: "nabokov", date: "1955" },
+  { title: "«Пнин»",                            author: "nabokov", date: "1957" },
+  { title: "«Бледное пламя»",                   author: "nabokov", date: "1962" },
+  { title: "«Ада, или Радости страсти»",        author: "nabokov", date: "1969" },
+  { title: "«Прозрачные вещи»",                 author: "nabokov", date: "1972" },
+  { title: "«Смотри на арлекинов!»",            author: "nabokov", date: "1974" },
+  { title: "«Подлинник Лауры»",                 author: "nabokov", date: "2009" },
 ];
 
-const PALETTE = ['#d0a94a', '#5f93b0', '#a26a98', '#6fa56a', '#c4724f'];
+const PALETTE = ['#d0a94a', '#5f93b0', '#a26a98', '#6fa56a', '#c4724f', '#7d7fbf'];
 
 // ===============================================================
 // ДАТЫ
@@ -266,29 +303,56 @@ function partsLabel(n) {
 }
 
 // ===============================================================
+// ФИЛЬТРЫ (что показывать) — запоминаются в браузере
+// ===============================================================
+const bookKey = b => (b.author || '') + '|' + b.title;
+let hiddenAuthors = new Set(), hiddenBooks = new Set(), onlyVoiced = false;
+try {
+  const f = JSON.parse(localStorage.getItem('booksFilter') || '{}');
+  hiddenAuthors = new Set(f.authors || []);
+  hiddenBooks = new Set(f.books || []);
+  onlyVoiced = !!f.onlyVoiced;
+} catch (e) {}
+function saveFilter() {
+  try {
+    localStorage.setItem('booksFilter', JSON.stringify({
+      authors: [...hiddenAuthors], books: [...hiddenBooks], onlyVoiced,
+    }));
+  } catch (e) {}
+}
+const isVisible = b => !hiddenAuthors.has(b.author || '') && !hiddenBooks.has(bookKey(b)) && (!onlyVoiced || !!b.link);
+
+// ===============================================================
 // ПОДГОТОВКА ДАННЫХ
 // ===============================================================
-let groups = [];   // [{key, author, color, born, died, books[]}]
+let groups = [];          // видимые дорожки
+const authorColor = {};   // цвет автора не зависит от того, кто сейчас скрыт
+
 function prepare() {
   books.forEach(b => { b._d = parseDate(b.date); });
+  // стабильные цвета: по порядку рождения среди всех авторов
+  Object.keys(authors)
+    .sort((a, b) => parseDate(authors[a].born).value - parseDate(authors[b].born).value)
+    .forEach((k, i) => { authorColor[k] = PALETTE[i % PALETTE.length]; });
+
   const map = new Map();
-  books.filter(b => b._d).forEach(b => {
+  books.filter(b => b._d && isVisible(b)).forEach(b => {
     const k = b.author || '';
     if (!map.has(k)) {
       const a = authors[k] || null;
-      map.set(k, { key: k, author: a, born: a && parseDate(a.born), died: a && a.died ? parseDate(a.died) : null, books: [] });
+      map.set(k, { key: k, author: a, color: authorColor[k] || '#9a9a9a',
+                   born: a && parseDate(a.born), died: a && a.died ? parseDate(a.died) : null, books: [] });
     }
     map.get(k).books.push(b);
   });
   groups = [...map.values()];
   groups.forEach(g => g.books.sort((a, b) => a._d.value - b._d.value));
   groups.sort((a, b) => (a.born ? a.born.value : a.books[0]._d.value) - (b.born ? b.born.value : b.books[0]._d.value));
-  groups.forEach((g, i) => { g.color = PALETTE[i % PALETTE.length]; });
 }
 const authorName = b => (authors[b.author] ? authors[b.author].name : '');
 
 // ===============================================================
-// КАРТОЧКИ (общие куски)
+// СПИСОК (карточки с обложками)
 // ===============================================================
 function makeCover(book) {
   if (!book.cover) {
@@ -299,7 +363,7 @@ function makeCover(book) {
   }
   const img = document.createElement('img');
   img.className = 'book-cover';
-  img.src = book.cover || '';
+  img.src = book.cover;
   img.alt = book.title;
   img.onerror = () => {
     img.onerror = null;
@@ -312,12 +376,12 @@ function makeCover(book) {
   };
   return img;
 }
-function metaText(book, withDate) {
+function metaText(book) {
   const p = [];
   if (!book.link) p.push('ещё не озвучена');
   if (book.partsCount) p.push(`${book.partsCount} ${partsLabel(book.partsCount)}`);
   if (book.narrator) p.push(`читает ${book.narrator}`);
-  if (withDate && book._d) p.push(book._d.label);
+  if (book._d) p.push(book._d.label);
   return p.join(' · ');
 }
 function listCard(book) {
@@ -329,16 +393,24 @@ function listCard(book) {
   info.innerHTML = '<div class="book-title"></div><div class="book-author"></div><div class="book-meta"></div>';
   info.children[0].textContent = book.title;
   info.children[1].textContent = authorName(book);
-  info.children[2].textContent = metaText(book, true);
+  info.children[2].textContent = metaText(book);
   a.append(makeCover(book), info);
   return a;
+}
+function renderList() {
+  const list = document.getElementById('bookList');
+  list.innerHTML = '';
+  const vis = books.filter(isVisible);
+  vis.filter(b => b._d).sort((a, b) => a._d.value - b._d.value).forEach(b => list.appendChild(listCard(b)));
+  vis.filter(b => !b._d).forEach(b => list.appendChild(listCard(b)));
 }
 
 // ===============================================================
 // ЛИНИЯ ВРЕМЕНИ
 // ===============================================================
-const CARD_W = 250, CARD_H = 88, GAP = 10, LANE_GAP = 10;
+const CHIP_H = 26;
 const MIN_SCALE = 0.1, MAX_SCALE = 2000;   // пикселей на год
+const chipW = b => Math.min(340, Math.round(b.title.length * 7.3 + 28));
 
 const viewport = document.getElementById('viewport');
 const track = document.getElementById('track');
@@ -346,9 +418,7 @@ let scale = 40;
 let baseMin = 1900, baseMax = 2030, viewMin = 1900, viewMax = 2030;
 let orient = 'h';
 const isH = () => orient === 'h';
-const LEN = () => isH() ? CARD_W : CARD_H;       // размер карточки вдоль оси времени
-const CROSS = () => isH() ? CARD_H : CARD_W;     // поперёк оси
-const PAD = () => LEN() / 2 + 24;
+const PAD = () => isH() ? 110 : 30;
 const clientMain = () => isH() ? viewport.clientWidth : viewport.clientHeight;
 const clientCross = () => isH() ? viewport.clientHeight : viewport.clientWidth;
 const scrollMain = () => isH() ? viewport.scrollLeft : viewport.scrollTop;
@@ -357,14 +427,14 @@ const ptrMain = e => isH() ? e.clientX : e.clientY;
 const rectMain = () => { const r = viewport.getBoundingClientRect(); return isH() ? r.left : r.top; };
 
 function computeRange() {
-  let vals = [TODAY];
+  const vals = [TODAY];
   groups.forEach(g => {
     g.books.forEach(b => vals.push(b._d.value));
     if (g.born) vals.push(g.born.value);
     if (g.died) vals.push(g.died.value);
   });
   const lo = Math.min(...vals), hi = Math.max(...vals);
-  const margin = Math.max(3, (hi - lo) * 0.07);
+  const margin = Math.max(3, (hi - lo) * 0.06);
   baseMin = Math.floor(lo - margin);
   baseMax = Math.ceil(hi + margin);     // всегда есть запас в будущее за «сегодня»
 }
@@ -382,15 +452,7 @@ function niceStep() {
   return 10000;
 }
 
-// положить элемент: m — позиция вдоль оси времени, c — поперёк; ms/cs — размеры
-function put(cls, parent, m, c, ms, cs, text) {
-  const e = document.createElement('div');
-  e.className = cls;
-  placeEl(e, m, c, ms, cs);
-  if (text != null) e.textContent = text;
-  parent.appendChild(e);
-  return e;
-}
+// m — позиция вдоль оси времени, c — поперёк; ms/cs — размеры
 function placeEl(e, m, c, ms, cs) {
   const s = e.style;
   if (isH()) {
@@ -403,6 +465,14 @@ function placeEl(e, m, c, ms, cs) {
     if (cs != null) s.width = cs + 'px';
   }
 }
+function put(cls, parent, m, c, ms, cs, text) {
+  const e = document.createElement('div');
+  e.className = cls;
+  placeEl(e, m, c, ms, cs);
+  if (text != null) e.textContent = text;
+  parent.appendChild(e);
+  return e;
+}
 
 function renderTimeline() {
   track.innerHTML = '';
@@ -410,24 +480,27 @@ function renderTimeline() {
   ensureRange();
   const total = Math.ceil(PAD() * 2 + (viewMax - viewMin) * scale);
   const RULER = isH() ? 36 : 70;
-  const LBL = 20, BARH = 12, HEAD = LBL + BARH, STEM = 14, GROUP_GAP = 26;
-  const laneH = CROSS() + LANE_GAP;
-  const maxLanes = isH() ? 3 : 2;
+  const LBL = 20, BARH = 12, HEAD = LBL + BARH, STEM = 12, GROUP_GAP = 24, LANE_GAP = 6, GAP = isH() ? 8 : 4;
+  const maxLanes = isH() ? 8 : 3;
+  const mainLen = b => isH() ? chipW(b) : CHIP_H;
 
-  // ---- раскладка групп (автор = «дорожка») ----
+  // ---- раскладка дорожек (автор = дорожка) ----
   let c0 = RULER + 16;
   const layouts = groups.map(g => {
+    const groupW = Math.max(...g.books.map(chipW));
+    const laneH = (isH() ? CHIP_H : groupW) + LANE_GAP;
     const lastEnd = [], items = [];
     g.books.forEach(b => {
       const p = posOf(b._d.value);
-      const start = Math.max(6, Math.min(p - LEN() / 2, total - LEN() - 6));
+      const len = mainLen(b);
+      const start = Math.max(4, Math.min(p - (isH() ? 14 : len / 2), total - len - 4));
       let lane = 0;
       while (lane < lastEnd.length && lastEnd[lane] + GAP > start) lane++;
-      if (lane < maxLanes) { lastEnd[lane] = start + LEN(); items.push({ b, p, start, lane }); }
-      else items.push({ b, p, start, lane: -1 });          // не влезла — только точка
+      if (lane < maxLanes) { lastEnd[lane] = start + len; items.push({ b, p, start, lane, len }); }
+      else items.push({ b, p, start, lane: -1, len });          // не влезла — только точка
     });
     const lanes = Math.min(maxLanes, lastEnd.length);
-    const L = { g, items, c0, lanes };
+    const L = { g, items, c0, lanes, laneH };
     c0 += HEAD + (lanes ? STEM + lanes * laneH : 0) + GROUP_GAP;
     return L;
   });
@@ -468,8 +541,12 @@ function renderTimeline() {
   put('today-label left', ruler, tp - 8, isH() ? 8 : 6, null, null, 'сегодня · ' + TODAY_LABEL);
   put('today-label', ruler, tp + 8, isH() ? 8 : 6, null, null, 'будущее →');
 
-  // ---- группы ----
-  layouts.forEach(({ g, items, c0, lanes }) => {
+  if (!layouts.length) {
+    put('empty-msg', track, PAD(), RULER + 30, null, null, 'Ничего не выбрано — откройте «Авторы и книги».');
+  }
+
+  // ---- дорожки ----
+  layouts.forEach(({ g, items, c0, laneH }) => {
     const col = g.color;
     const holder = document.createElement('div');
     holder.style.setProperty('--c', col);
@@ -479,8 +556,7 @@ function renderTimeline() {
     if (g.born) {
       s0 = posOf(g.born.value);
       s1 = posOf(g.died ? g.died.value : TODAY);
-      const by = g.born.year, dy = g.died ? g.died.year : '';
-      label = `${g.author.name} · ${by}–${dy}`;
+      label = `${g.author.name} · ${g.born.year}–${g.died ? g.died.year : ''}`;
       title = `${g.author.name}: ${g.born.label} — ${g.died ? g.died.label : 'наши дни'}`;
     } else {
       s0 = items[0].p; s1 = items[items.length - 1].p;
@@ -499,36 +575,29 @@ function renderTimeline() {
       wrap.appendChild(lb);
     }
 
-    items.forEach(({ b, p, start, lane }) => {
-      const dot = put('dot' + (lane < 0 ? ' small' : ''), holder, p, c0 + LBL + BARH / 2);
-      dot.style.setProperty('--c', col);
-      dot.title = `${b.title} — ${b._d.label}`;
+    items.forEach(({ b, p, start, lane, len }) => {
+      const tip = `${b.title} — ${b._d.label}${b.link ? '' : ' (ещё не озвучена)'}`;
+      const dot = put('dot' + (lane < 0 ? ' small' : '') + (b.link ? '' : ' soon-dot'), holder, p, c0 + LBL + BARH / 2);
+      dot.title = tip;
       if (lane < 0) {
         dot.onclick = e => { e.stopPropagation(); setScale(scale * 3, p - scrollMain()); };
         return;
       }
-      const cardC = c0 + HEAD + STEM + lane * laneH;
+      const chipC = c0 + HEAD + STEM + lane * laneH;
       const stem = put('stem', holder, p, c0 + HEAD, 1, STEM + lane * laneH);
-      stem.style.setProperty('--c', col);
 
       const a = document.createElement(b.link ? 'a' : 'div');
-      a.className = 't-card' + (b.link ? '' : ' soon');
-      a.style.setProperty('--c', col);
+      a.className = 'chip' + (b.link ? '' : ' soon');
       if (b.link) a.href = b.link;
-      placeEl(a, start, cardC, null, null);
-      a.style.width = CARD_W + 'px'; a.style.height = CARD_H + 'px';
-      const info = document.createElement('div');
-      info.className = 'book-info';
-      info.innerHTML = '<div class="book-title"></div><div class="book-author"></div><div class="book-meta"></div>';
-      info.children[0].textContent = b.title;
-      info.children[1].textContent = authorName(b);
-      info.children[2].innerHTML = '<span class="t-date"></span><span class="soon-tag"></span>';
-      info.children[2].children[0].textContent = b._d.label;
-      if (!b.link) info.children[2].children[1].textContent = ' · ещё не озвучена';
-      a.append(makeCover(b), info);
+      a.title = tip;
+      a.textContent = b.title;
+      placeEl(a, start, chipC, null, null);
+      if (isH()) { a.style.width = len + 'px'; a.style.height = CHIP_H + 'px'; }
+      else { a.style.width = chipW(b) + 'px'; a.style.height = CHIP_H + 'px'; }
       holder.appendChild(a);
     });
-    while (holder.firstChild) track.appendChild(holder.firstChild);
+    holder.style.display = 'contents';      // чтобы дети наследовали --c, но позиционировались от #track
+    track.appendChild(holder);
   });
 }
 
@@ -592,7 +661,110 @@ viewport.addEventListener('touchmove', e => {
 }, { passive: false });
 viewport.addEventListener('touchend', e => { if (e.touches.length < 2) pinch = null; });
 
-// ---------- ориентация и вид ----------
+// ===============================================================
+// ПАНЕЛЬ «АВТОРЫ И КНИГИ»
+// ===============================================================
+const panel = document.getElementById('filterPanel');
+const filterBtn = document.getElementById('filterBtn');
+
+function applyFilter() {
+  saveFilter();
+  prepare();
+  renderList();
+  syncPanelStates();
+  if (!viewport.classList.contains('hidden')) fitAll();
+}
+
+function buildPanel() {
+  panel.innerHTML = '';
+  const top = document.createElement('div');
+  top.className = 'fp-top';
+  top.innerHTML = `
+    <label><input type="checkbox" id="fpVoiced"> Только озвученные</label>
+    <div class="fp-actions"><button id="fpAll">Показать всё</button><button id="fpNone">Скрыть всё</button></div>`;
+  panel.appendChild(top);
+  top.querySelector('#fpVoiced').onchange = e => { onlyVoiced = e.target.checked; applyFilter(); };
+  top.querySelector('#fpAll').onclick = () => { hiddenAuthors.clear(); hiddenBooks.clear(); onlyVoiced = false; applyFilter(); };
+  top.querySelector('#fpNone').onclick = () => { Object.keys(authors).forEach(k => hiddenAuthors.add(k)); applyFilter(); };
+
+  Object.keys(authors)
+    .sort((a, b) => parseDate(authors[a].born).value - parseDate(authors[b].born).value)
+    .forEach(k => {
+      const list = books.filter(b => b.author === k).sort((a, b) => a._d.value - b._d.value);
+      const det = document.createElement('details');
+      det.dataset.author = k;
+      const sum = document.createElement('summary');
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.className = 'fp-author';
+      cb.onclick = e => e.stopPropagation();
+      cb.onchange = () => { cb.checked ? hiddenAuthors.delete(k) : hiddenAuthors.add(k); applyFilter(); };
+      const a = authors[k], bd = parseDate(a.born), dd = a.died ? parseDate(a.died) : null;
+      const voiced = list.filter(b => b.link).length;
+      sum.append(cb);
+      sum.insertAdjacentHTML('beforeend',
+        `<span class="fp-sw" style="background:${authorColor[k]}"></span>
+         <span class="fp-name"></span><span class="fp-count"></span><span class="fp-caret">▶</span>`);
+      sum.querySelector('.fp-name').textContent = `${a.name} (${bd.year}–${dd ? dd.year : ''})`;
+      sum.querySelector('.fp-count').textContent = voiced ? `${list.length} · озвучено ${voiced}` : `${list.length}`;
+      det.appendChild(sum);
+
+      const bl = document.createElement('div');
+      bl.className = 'fp-books';
+      list.forEach(b => {
+        const lab = document.createElement('label');
+        const c = document.createElement('input');
+        c.type = 'checkbox';
+        c.dataset.key = bookKey(b);
+        c.onchange = () => { c.checked ? hiddenBooks.delete(bookKey(b)) : hiddenBooks.add(bookKey(b)); applyFilter(); };
+        const t = document.createElement('span');
+        t.textContent = b.title;
+        const y = document.createElement('span');
+        y.className = 'fp-year';
+        y.textContent = b._d.year;
+        lab.append(c, t);
+        if (b.link) lab.insertAdjacentHTML('beforeend', '<span class="fp-tag">● озвучена</span>');
+        lab.append(y);
+        bl.appendChild(lab);
+      });
+      det.appendChild(bl);
+      panel.appendChild(det);
+    });
+  syncPanelStates();
+}
+
+function syncPanelStates() {
+  panel.querySelector('#fpVoiced').checked = onlyVoiced;
+  panel.querySelectorAll('details').forEach(det => {
+    const k = det.dataset.author;
+    const list = books.filter(b => b.author === k);
+    const cb = det.querySelector('.fp-author');
+    const hiddenCount = list.filter(b => hiddenBooks.has(bookKey(b)) || (onlyVoiced && !b.link)).length;
+    cb.checked = !hiddenAuthors.has(k);
+    cb.indeterminate = cb.checked && hiddenCount > 0;
+    det.style.opacity = hiddenAuthors.has(k) ? .55 : 1;
+    det.querySelectorAll('.fp-books input').forEach(c => {
+      const b = list.find(x => bookKey(x) === c.dataset.key);
+      c.checked = !hiddenBooks.has(c.dataset.key);
+      c.disabled = hiddenAuthors.has(k) || (onlyVoiced && !b.link);
+    });
+  });
+}
+
+filterBtn.onclick = e => {
+  e.stopPropagation();
+  panel.classList.toggle('hidden');
+  filterBtn.classList.toggle('active', !panel.classList.contains('hidden'));
+};
+document.addEventListener('click', e => {
+  if (!panel.classList.contains('hidden') && !panel.contains(e.target) && e.target !== filterBtn) {
+    panel.classList.add('hidden'); filterBtn.classList.remove('active');
+  }
+});
+
+// ===============================================================
+// ОРИЕНТАЦИЯ И ВИД
+// ===============================================================
 function setOrient(o) {
   orient = o === 'v' ? 'v' : 'h';
   document.getElementById('orientH').classList.toggle('active', isH());
@@ -622,16 +794,11 @@ document.getElementById('viewTimeline').onclick = () => setView('timeline');
 document.getElementById('viewList').onclick = () => setView('list');
 
 // ---------- старт ----------
-function renderList() {
-  const list = document.getElementById('bookList');
-  list.innerHTML = '';
-  books.filter(b => b._d).sort((a, b) => a._d.value - b._d.value).forEach(b => list.appendChild(listCard(b)));
-  books.filter(b => !b._d).forEach(b => list.appendChild(listCard(b)));
-}
 function render() { prepare(); renderList(); computeRange(); renderTimeline(); }
 
 prepare();
 renderList();
+buildPanel();
 let savedView = 'timeline';
 try {
   savedView = localStorage.getItem('booksView') || 'timeline';
