@@ -9,71 +9,162 @@
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%93%96%3C/text%3E%3C/svg%3E">
 <title>Аудиокниги с синхронным текстом</title>
 <style>
+  :root {
+    --bg: #fdfcf9;
+    --ink: #222;
+    --muted: #888;
+    --line: #e2ddd2;
+    --gold: #d0a94a;
+    --card: #fff;
+  }
+  * { box-sizing: border-box; }
   body {
     font-family: Georgia, 'Times New Roman', serif;
-    max-width: 760px;
-    margin: 0 auto;
-    padding: 40px 24px;
-    background: #fdfcf9;
-    color: #222;
+    margin: 0;
+    padding: 32px 0 48px;
+    background: var(--bg);
+    color: var(--ink);
   }
-  h1 { font-weight: normal; font-size: 28px; margin-bottom: 4px; }
-  .subtitle { font-family: sans-serif; font-size: 14px; color: #888; margin-bottom: 32px; }
-  .book-list { display: flex; flex-direction: column; gap: 16px; }
-  .book-card {
-    display: flex;
-    gap: 20px;
-    padding: 20px 24px;
-    border: 1px solid #e2ddd2;
-    border-radius: 10px;
-    text-decoration: none;
-    color: inherit;
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 0 24px; }
+  h1 { font-weight: normal; font-size: 28px; margin: 0 0 4px; }
+  .subtitle { font-family: sans-serif; font-size: 14px; color: var(--muted); margin-bottom: 20px; }
+
+  /* ---------- панель управления ---------- */
+  .toolbar {
+    display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+    font-family: sans-serif; font-size: 13px; margin-bottom: 12px;
+  }
+  .toolbar button {
+    font: inherit; padding: 7px 12px; min-width: 36px;
+    border: 1px solid var(--line); background: #fff; color: var(--ink);
+    border-radius: 8px; cursor: pointer;
+  }
+  .toolbar button:hover { border-color: var(--gold); }
+  .toolbar button.active { background: #f6eed7; border-color: var(--gold); }
+  .toolbar .spacer { flex: 1; }
+  .toolbar .hint { color: var(--muted); font-size: 12px; }
+
+  /* ---------- линия времени ---------- */
+  #viewport {
+    position: relative;
+    overflow-x: auto; overflow-y: hidden;
+    border: 1px solid var(--line); border-radius: 12px;
     background: #fff;
-    transition: border-color 0.15s, transform 0.15s;
+    touch-action: pan-x pan-y;
+    cursor: grab;
+    -webkit-overflow-scrolling: touch;
   }
-  .book-card:hover { border-color: #d0a94a; transform: translateY(-1px); }
+  #viewport.dragging { cursor: grabbing; user-select: none; }
+  #track { position: relative; }
+  #viewport.vert { overflow-y: auto; }
+  .axis { position: absolute; background: #b9ae92; }
+  .grid { position: absolute; background: #f1ede2; }
+  .v .tick-label { transform: translateY(-50%); }
+  .grid.minor { background: #f8f6ef; }
+  .tick-label {
+    position: absolute; transform: translateX(-50%);
+    font-family: sans-serif; font-size: 12px; color: #8a7f60; white-space: nowrap;
+    pointer-events: none;
+  }
+  .tick-label.minor { font-size: 10px; color: #b3aa90; }
+  .tick-mark { position: absolute; background: #b9ae92; }
+
+  .stem { position: absolute; background: var(--gold); opacity: .7; }
+  .dot {
+    position: absolute; width: 12px; height: 12px; margin: -6px 0 0 -6px;
+    border-radius: 50%; background: var(--gold); border: 2px solid #fff;
+    box-shadow: 0 0 0 1px var(--gold);
+    z-index: 3;
+  }
+  .t-card {
+    position: absolute; z-index: 2;
+    display: flex; gap: 10px; padding: 8px 10px;
+    border: 1px solid var(--line); border-radius: 8px; background: var(--card);
+    text-decoration: none; color: inherit;
+    box-shadow: 0 1px 4px rgba(0,0,0,.06);
+    transition: border-color .15s, box-shadow .15s;
+    overflow: hidden;
+  }
+  .t-card:hover, .t-card.hl { border-color: var(--gold); box-shadow: 0 3px 10px rgba(0,0,0,.12); z-index: 4; }
+  .t-card .book-cover { width: 50px; height: 72px; flex-shrink: 0; }
+  .t-card .book-info { min-width: 0; }
+  .t-card .book-title {
+    font-size: 14px; line-height: 1.25; margin: 0 0 3px;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  }
+  .t-card .book-author { font-size: 12px; margin-bottom: 3px; }
+  .t-card .book-meta { font-size: 11px; }
+  .t-date { color: #a07d1c; font-weight: bold; }
+
+  /* ---------- карточки (список) ---------- */
+  .book-list { display: flex; flex-direction: column; gap: 16px; max-width: 760px; }
+  .book-card {
+    display: flex; gap: 20px; padding: 20px 24px;
+    border: 1px solid var(--line); border-radius: 10px;
+    text-decoration: none; color: inherit; background: #fff;
+    transition: border-color .15s, transform .15s;
+  }
+  .book-card:hover { border-color: var(--gold); transform: translateY(-1px); }
   .book-cover {
-    width: 84px;
-    height: 120px;
-    flex-shrink: 0;
-    object-fit: cover;
-    border-radius: 4px;
-    background: #eee5d0;
-    box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+    width: 84px; height: 120px; flex-shrink: 0; object-fit: cover;
+    border-radius: 4px; background: #eee5d0; box-shadow: 0 2px 6px rgba(0,0,0,.15);
   }
   .book-cover.placeholder {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-family: sans-serif;
-    font-size: 11px;
-    color: #a99a6f;
-    text-align: center;
-    padding: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-family: sans-serif; font-size: 10px; color: #a99a6f; text-align: center; padding: 4px;
+    overflow: hidden;
   }
   .book-info { display: flex; flex-direction: column; justify-content: center; }
   .book-title { font-size: 19px; margin: 0 0 4px; line-height: 1.3; }
   .book-author { font-family: sans-serif; font-size: 14px; color: #555; margin-bottom: 6px; }
   .book-meta { font-family: sans-serif; font-size: 12px; color: #999; }
+
+  #undated { margin-top: 28px; }
+  #undated h2 { font-weight: normal; font-size: 18px; margin: 0 0 12px; }
+  @media (max-width: 1100px) { .toolbar .hint { display: none; } }
+  .hidden { display: none !important; }
 </style>
 </head>
 <body>
+<div class="wrap">
 
 <h1>Аудиокниги с синхронным текстом</h1>
 <div class="subtitle">Тексты общественного достояния — читать и слушать одновременно</div>
 
-<div class="book-list" id="bookList"></div>
+<div class="toolbar">
+  <button id="zoomOut" title="Отдалить">−</button>
+  <button id="zoomIn" title="Приблизить">+</button>
+  <button id="fitAll">Показать все</button>
+  <span class="hint" id="hint">колесо / щипок — масштаб · перетаскивание — сдвиг</span>
+  <span class="spacer"></span>
+  <button id="orientH" class="active" title="Горизонтально">↔ Горизонтально</button>
+  <button id="orientV" title="Вертикально">↕ Вертикально</button>
+  <button id="viewTimeline" class="active">Линия времени</button>
+  <button id="viewList">Список</button>
+</div>
+
+<div id="viewport"><div id="track"></div></div>
+<div class="book-list hidden" id="bookList"></div>
+
+<div id="undated" class="hidden">
+  <h2>Без даты</h2>
+  <div class="book-list" id="undatedList"></div>
+</div>
+
+</div>
 
 <script>
 // ---------------------------------------------------------------
-// Чтобы добавить новую книгу — допишите один объект в этот массив.
+// Чтобы «насадить» новую книгу на линию времени — допишите один объект.
+// date: "1910" (год) | "1910-05" (месяц) | "1910-05-17" (точная дата)
+// Без date книга попадёт в раздел «Без даты».
 // cover необязателен: если файла обложки нет, покажется заглушка.
 // ---------------------------------------------------------------
 const books = [
   {
     title: "«Последние страницы из дневника женщины»",
     author: "Валерий Брюсов",
-    year: 1910,
+    date: "1910",
     narrator: "Екатерина Егорова",
     partsCount: 5,
     cover: "bryusov-poslednie-stranitsy/cover.jpg",
@@ -82,22 +173,47 @@ const books = [
   {
     title: "«Машенька»",
     author: "Владимир Набоков",
-    year: 1926,
+    date: "1926",
     narrator: "Сергей Чонишвили",
     partsCount: 17,
     cover: "nabokov-mashenka/cover.jpg",
     link: "nabokov-mashenka/reader.html",
   },
-  // { title: "...", author: "...", year: ..., narrator: "...", partsCount: ..., cover: "...", link: "..." },
+  // { title: "...", author: "...", date: "1899-03-05", narrator: "...", partsCount: 1, cover: "...", link: "..." },
 ];
 
-const listEl = document.getElementById('bookList');
+// ---------- даты ----------
+const MONTHS_GEN = ['января','февраля','марта','апреля','мая','июня','июля','августа','сентября','октября','ноября','декабря'];
+const MONTHS_SHORT = ['янв','фев','мар','апр','май','июн','июл','авг','сен','окт','ноя','дек'];
+const isLeap = y => (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0;
 
-books.forEach(book => {
-  const a = document.createElement('a');
-  a.className = 'book-card';
-  a.href = book.link;
+function parseDate(s) {
+  if (!s) return null;
+  const m = String(s).match(/^(-?\d{1,4})(?:-(\d{1,2}))?(?:-(\d{1,2}))?$/);
+  if (!m) return null;
+  const y = +m[1], mo = m[2] ? +m[2] : null, d = m[3] ? +m[3] : null;
+  let frac = 0;
+  if (mo) {
+    const t0 = Date.UTC(2001, 0, 1);             // невисокосный каркас для долей
+    const t1 = Date.UTC(2001, mo - 1, d || 1);
+    frac = (t1 - t0) / (365 * 864e5);
+  }
+  return { year: y, value: y + frac, label: dateLabel(y, mo, d) };
+}
+function dateLabel(y, mo, d) {
+  if (mo && d) return `${d} ${MONTHS_GEN[mo - 1]} ${y}`;
+  if (mo) return `${MONTHS_GEN[mo - 1]} ${y}`;
+  return `${y}`;
+}
+function partsLabel(n) {
+  const a = n % 10, b = n % 100;
+  if (a === 1 && b !== 11) return 'часть';
+  if ([2, 3, 4].includes(a) && ![12, 13, 14].includes(b)) return 'части';
+  return 'частей';
+}
 
+// ---------- карточка книги (общие куски) ----------
+function makeCover(book) {
   const img = document.createElement('img');
   img.className = 'book-cover';
   img.src = book.cover || '';
@@ -105,39 +221,310 @@ books.forEach(book => {
   img.onerror = () => {
     img.onerror = null;
     img.removeAttribute('src');
+    img.alt = '';
     img.classList.add('placeholder');
-    img.textContent = '';
     const span = document.createElement('span');
     span.textContent = book.title;
     img.appendChild(span);
   };
-
+  return img;
+}
+function metaText(book, withDate) {
+  const p = [];
+  if (book.partsCount) p.push(`${book.partsCount} ${partsLabel(book.partsCount)}`);
+  if (book.narrator) p.push(`читает ${book.narrator}`);
+  if (withDate && book._d) p.push(book._d.label);
+  return p.join(' · ');
+}
+function listCard(book) {
+  const a = document.createElement('a');
+  a.className = 'book-card';
+  a.href = book.link;
   const info = document.createElement('div');
   info.className = 'book-info';
-
-  const metaParts = [];
-  if (book.partsCount) metaParts.push(`${book.partsCount} ${partsLabel(book.partsCount)}`);
-  if (book.narrator) metaParts.push(`читает ${book.narrator}`);
-  if (book.year) metaParts.push(`${book.year} г.`);
-
   info.innerHTML = `
-    <div class="book-title">${book.title}</div>
-    <div class="book-author">${book.author || ''}</div>
-    <div class="book-meta">${metaParts.join(' · ')}</div>
-  `;
-
-  a.appendChild(img);
-  a.appendChild(info);
-  listEl.appendChild(a);
-});
-
-function partsLabel(n) {
-  const mod10 = n % 10;
-  const mod100 = n % 100;
-  if (mod10 === 1 && mod100 !== 11) return 'часть';
-  if ([2, 3, 4].includes(mod10) && ![12, 13, 14].includes(mod100)) return 'части';
-  return 'частей';
+    <div class="book-title"></div>
+    <div class="book-author"></div>
+    <div class="book-meta"></div>`;
+  info.children[0].textContent = book.title;
+  info.children[1].textContent = book.author || '';
+  info.children[2].textContent = metaText(book, true);
+  a.append(makeCover(book), info);
+  return a;
 }
+
+books.forEach(b => { b._d = parseDate(b.date); });
+
+// ---------- состояние линии времени ----------
+const CARD_W = 250, CARD_H = 88, GAP = 10, LANE_GAP = 12;
+const MIN_SCALE = 2, MAX_SCALE = 2000;   // пикселей на год
+
+const viewport = document.getElementById('viewport');
+const track = document.getElementById('track');
+let scale = 40;       // px / год
+let minYear = 1900, maxYear = 1930;
+let orient = 'h';     // 'h' — горизонтальная, 'v' — вертикальная
+const isH = () => orient === 'h';
+const LEN = () => isH() ? CARD_W : CARD_H;          // размер карточки вдоль оси времени
+const CROSS = () => isH() ? CARD_H : CARD_W;        // размер карточки поперёк оси
+const PAD = () => LEN() / 2 + 24;
+const clientMain = () => isH() ? viewport.clientWidth : viewport.clientHeight;
+const scrollMain = () => isH() ? viewport.scrollLeft : viewport.scrollTop;
+const setScrollMain = v => { if (isH()) viewport.scrollLeft = v; else viewport.scrollTop = v; };
+const ptrMain = e => isH() ? e.clientX : e.clientY;
+
+function dated() { return books.filter(b => b._d).sort((a, b) => a._d.value - b._d.value); }
+
+function computeRange() {
+  const ds = dated();
+  if (!ds.length) { minYear = 1900; maxYear = 2000; return; }
+  const lo = Math.min(...ds.map(b => b._d.value));
+  const hi = Math.max(...ds.map(b => b._d.value));
+  const span = Math.max(hi - lo, 4);
+  const margin = Math.max(2, Math.ceil(span * 0.08));
+  minYear = Math.floor(lo) - margin;
+  maxYear = Math.ceil(hi) + margin;
+}
+const posOf = v => PAD() + (v - minYear) * scale;
+
+function niceStep() {
+  const min = isH() ? 80 : 56;
+  for (const s of [1, 2, 5, 10, 20, 25, 50, 100, 200, 500, 1000]) if (s * scale >= min) return s;
+  return 1000;
+}
+
+// положить элемент: m — позиция вдоль оси времени, c — поперёк, ms/cs — размеры
+function put(cls, parent, m, c, ms, cs, text) {
+  const e = document.createElement('div');
+  e.className = cls;
+  const s = e.style;
+  if (isH()) {
+    s.left = m + 'px'; s.top = c + 'px';
+    if (ms != null) s.width = ms + 'px';
+    if (cs != null) s.height = cs + 'px';
+  } else {
+    s.top = m + 'px'; s.left = c + 'px';
+    if (ms != null) s.height = ms + 'px';
+    if (cs != null) s.width = cs + 'px';
+  }
+  if (text != null) e.textContent = text;
+  parent.appendChild(e);
+  return e;
+}
+
+function renderTimeline() {
+  track.innerHTML = '';
+  track.classList.toggle('v', !isH());
+  viewport.classList.toggle('vert', !isH());
+  const ds = dated();
+  const PADm = PAD();
+  const total = Math.ceil(PADm * 2 + (maxYear - minYear) * scale);   // длина по оси времени
+
+  // раскладка карточек по «дорожкам» по обе стороны оси
+  const lastEnd = { up: [], down: [] };
+  let pref = 'up';
+  const placed = ds.map(b => {
+    const p = posOf(b._d.value);
+    const start = Math.max(6, Math.min(p - LEN() / 2, total - LEN() - 6));
+    const find = side => {
+      const arr = lastEnd[side];
+      let i = 0;
+      while (i < arr.length && arr[i] + GAP > start) i++;
+      return i;
+    };
+    const iPref = find(pref), other = pref === 'up' ? 'down' : 'up', iOther = find(other);
+    const side = iOther < iPref ? other : pref;
+    const lane = side === pref ? iPref : iOther;
+    lastEnd[side][lane] = start + LEN();
+    pref = side === 'up' ? 'down' : 'up';
+    return { b, p, start, side, lane };
+  });
+
+  const up = Math.max(1, lastEnd.up.length), down = Math.max(1, lastEnd.down.length);
+  const laneH = CROSS() + LANE_GAP;
+  const BAND = isH() ? 30 : 58;                // зазор между осью и карточками (там подписи)
+  let off = 0;
+  const crossSize = up * laneH + BAND * 2 + down * laneH + 12;
+  if (!isH()) off = Math.max(0, (viewport.clientWidth - crossSize) / 2);
+  const axisC = off + up * laneH + BAND + 6;   // координата оси поперёк
+  const crossTotal = Math.max(crossSize + off * 2, isH() ? 0 : viewport.clientWidth);
+
+  if (isH()) {
+    track.style.width = total + 'px'; track.style.height = crossTotal + 'px';
+    viewport.style.height = crossTotal + 'px';
+  } else {
+    track.style.width = crossTotal + 'px'; track.style.height = total + 'px';
+    viewport.style.height = Math.max(420, Math.round(window.innerHeight * 0.7)) + 'px';
+  }
+
+  // сетка и подписи
+  const step = niceStep();
+  const from = Math.ceil(minYear / step) * step;
+  const lblC = isH() ? axisC + 8 : axisC + 12;
+  for (let y = from; y <= maxYear; y += step) {
+    const p = posOf(y);
+    put('grid', track, p, 0, 1, crossTotal);
+    put('tick-mark', track, p, axisC - 4, 1, 9);
+    put('tick-label', track, p, lblC, null, null, String(y));
+  }
+  if (scale >= 160) {                          // месяцы
+    const labels = scale >= 480;
+    for (let y = Math.floor(minYear); y <= maxYear; y++) {
+      for (let m = 1; m < 12; m++) {
+        const v = y + (Date.UTC(2001, m, 1) - Date.UTC(2001, 0, 1)) / (365 * 864e5);
+        if (v < minYear || v > maxYear) continue;
+        const p = posOf(v);
+        put('grid minor', track, p, 0, 1, crossTotal);
+        put('tick-mark', track, p, axisC - 2, 1, 5);
+        if (labels) put('tick-label minor', track, p, lblC, null, null, MONTHS_SHORT[m]);
+      }
+    }
+  }
+  put('axis', track, 0, axisC, total, 2);
+
+  // книги
+  placed.forEach(({ b, p, start, side, lane }) => {
+    const cardC = side === 'up'
+      ? axisC - BAND - (lane + 1) * laneH + LANE_GAP
+      : axisC + BAND + lane * laneH;
+    const sC0 = side === 'up' ? cardC + CROSS() : axisC;
+    const sC1 = side === 'up' ? axisC : cardC;
+    put('stem', track, p, sC0, 1, sC1 - sC0);
+    put('dot', track, p, axisC);
+
+    const a = document.createElement('a');
+    a.className = 't-card';
+    a.href = b.link;
+    const s = a.style;
+    if (isH()) { s.left = start + 'px'; s.top = cardC + 'px'; }
+    else { s.top = start + 'px'; s.left = cardC + 'px'; }
+    s.width = CARD_W + 'px'; s.height = CARD_H + 'px';
+    const info = document.createElement('div');
+    info.className = 'book-info';
+    info.innerHTML = '<div class="book-title"></div><div class="book-author"></div><div class="book-meta"></div>';
+    info.children[0].textContent = b.title;
+    info.children[1].textContent = b.author || '';
+    info.children[2].innerHTML = '<span class="t-date"></span>';
+    info.children[2].firstChild.textContent = b._d.label;
+    a.append(makeCover(b), info);
+    track.appendChild(a);
+  });
+}
+
+// ---------- масштаб ----------
+function setScale(newScale, anchorPx) {
+  newScale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, newScale));
+  if (newScale === scale) return;
+  if (anchorPx == null) anchorPx = clientMain() / 2;
+  const yearAtAnchor = minYear + (scrollMain() + anchorPx - PAD()) / scale;
+  scale = newScale;
+  renderTimeline();
+  setScrollMain(PAD() + (yearAtAnchor - minYear) * scale - anchorPx);
+}
+function fitAll() {
+  computeRange();
+  if (!isH()) viewport.style.height = Math.max(420, Math.round(window.innerHeight * 0.7)) + 'px';
+  scale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, (clientMain() - PAD() * 2) / (maxYear - minYear)));
+  renderTimeline();
+  setScrollMain(0);
+}
+
+document.getElementById('zoomIn').onclick = () => setScale(scale * 1.6);
+document.getElementById('zoomOut').onclick = () => setScale(scale / 1.6);
+document.getElementById('fitAll').onclick = fitAll;
+
+const rectMain = () => { const r = viewport.getBoundingClientRect(); return isH() ? r.left : r.top; };
+
+viewport.addEventListener('wheel', e => {
+  if (isH() && Math.abs(e.deltaX) > Math.abs(e.deltaY) && !e.ctrlKey) return;   // горизонтальный свайп — обычная прокрутка
+  e.preventDefault();
+  const factor = Math.exp(-e.deltaY * (e.ctrlKey ? 0.01 : 0.0015));
+  setScale(scale * factor, ptrMain(e) - rectMain());
+}, { passive: false });
+
+// перетаскивание мышью
+let drag = null, moved = false;
+viewport.addEventListener('pointerdown', e => {
+  if (e.pointerType !== 'mouse' || e.button !== 0) return;
+  drag = { x: ptrMain(e), pos: scrollMain() };
+  moved = false;
+});
+window.addEventListener('pointermove', e => {
+  if (!drag) return;
+  const dx = ptrMain(e) - drag.x;
+  if (Math.abs(dx) > 5) { moved = true; viewport.classList.add('dragging'); }
+  if (moved) setScrollMain(drag.pos - dx);
+});
+window.addEventListener('pointerup', () => {
+  drag = null; viewport.classList.remove('dragging');
+});
+viewport.addEventListener('click', e => { if (moved) { e.preventDefault(); e.stopPropagation(); moved = false; } }, true);
+
+// щипок пальцами
+let pinch = null;
+const dist = t => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+viewport.addEventListener('touchstart', e => {
+  if (e.touches.length === 2) pinch = { d: dist(e.touches), s: scale };
+}, { passive: true });
+viewport.addEventListener('touchmove', e => {
+  if (pinch && e.touches.length === 2) {
+    e.preventDefault();
+    const c = isH() ? (e.touches[0].clientX + e.touches[1].clientX) / 2 : (e.touches[0].clientY + e.touches[1].clientY) / 2;
+    setScale(pinch.s * dist(e.touches) / pinch.d, c - rectMain());
+  }
+}, { passive: false });
+viewport.addEventListener('touchend', e => { if (e.touches.length < 2) pinch = null; });
+
+// ---------- ориентация ----------
+function setOrient(o) {
+  orient = o === 'v' ? 'v' : 'h';
+  document.getElementById('orientH').classList.toggle('active', isH());
+  document.getElementById('orientV').classList.toggle('active', !isH());
+  try { localStorage.setItem('booksOrient', orient); } catch (e) {}
+  if (!viewport.classList.contains('hidden')) fitAll();
+}
+document.getElementById('orientH').onclick = () => setOrient('h');
+document.getElementById('orientV').onclick = () => setOrient('v');
+
+// ---------- переключатель вида ----------
+function setView(v) {
+  const tl = v === 'timeline';
+  viewport.classList.toggle('hidden', !tl);
+  document.getElementById('bookList').classList.toggle('hidden', tl);
+  document.getElementById('viewTimeline').classList.toggle('active', tl);
+  document.getElementById('viewList').classList.toggle('active', !tl);
+  ['zoomIn', 'zoomOut', 'fitAll', 'hint', 'orientH', 'orientV'].forEach(id => document.getElementById(id).classList.toggle('hidden', !tl));
+  try { localStorage.setItem('booksView', v); } catch (e) {}
+  if (tl) fitAll();
+}
+document.getElementById('viewTimeline').onclick = () => setView('timeline');
+document.getElementById('viewList').onclick = () => setView('list');
+
+// ---------- первая отрисовка ----------
+function renderLists() {
+  const list = document.getElementById('bookList');
+  list.innerHTML = '';
+  dated().forEach(b => list.appendChild(listCard(b)));
+  books.filter(b => !b._d).forEach(b => list.appendChild(listCard(b)));
+
+  const und = books.filter(b => !b._d);
+  const undEl = document.getElementById('undatedList');
+  undEl.innerHTML = '';
+  und.forEach(b => undEl.appendChild(listCard(b)));
+  document.getElementById('undated').classList.toggle('hidden', !und.length);
+}
+function render() { renderLists(); computeRange(); renderTimeline(); }
+
+renderLists();
+let saved = 'timeline';
+try { saved = localStorage.getItem('booksView') || 'timeline'; } catch (e) {}
+try { orient = localStorage.getItem('booksOrient') === 'v' ? 'v' : 'h'; } catch (e) {}
+document.getElementById('orientH').classList.toggle('active', isH());
+document.getElementById('orientV').classList.toggle('active', !isH());
+setView(saved === 'list' ? 'list' : 'timeline');
+
+let rt;
+window.addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(() => { if (!viewport.classList.contains('hidden')) fitAll(); }, 150); });
 </script>
 
 </body>
