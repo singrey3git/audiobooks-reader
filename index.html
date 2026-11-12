@@ -67,6 +67,9 @@
   details[open] > summary .fp-caret { transform: rotate(90deg); }
   .fp-sw { width: 11px; height: 11px; border-radius: 50%; flex-shrink: 0; }
   .fp-name { flex: 1; }
+  .fp-side { display: inline-flex; gap: 2px; }
+  .fp-side button { font-size: 11px; padding: 2px 6px; border: 1px solid var(--line); background: #fff; color: #bbb; border-radius: 5px; cursor: pointer; }
+  .fp-side button.on { background: #f6eed7; border-color: var(--gold); color: #6b5a22; }
   .fp-count { color: #aaa; font-size: 12px; }
   .fp-books { padding: 2px 10px 8px 34px; display: flex; flex-direction: column; gap: 5px; }
   .fp-books label { font-size: 12.5px; color: #444; }
@@ -84,8 +87,7 @@
   #viewport.dragging { cursor: grabbing; user-select: none; }
   #track { position: relative; }
 
-  .ruler { position: sticky; z-index: 6; background: var(--bg); }
-  .ruler-line { position: absolute; background: #b9ae92; }
+  .ruler-line { position: absolute; background: #b9ae92; z-index: 1; }
   .grid { position: absolute; background: #f1ede2; }
   .grid.minor { background: #f8f6ef; }
   .tick-mark { position: absolute; background: #b9ae92; }
@@ -102,15 +104,6 @@
     background: repeating-linear-gradient(135deg, rgba(120,100,60,.06) 0 6px, transparent 6px 14px);
   }
   .today-line { position: absolute; background: #c0583a; opacity: .55; }
-  .today-label {
-    position: absolute; font-family: sans-serif; font-size: 11px; line-height: 18px;
-    color: #b0583a; white-space: nowrap; pointer-events: none;
-    background: var(--bg); border: 1px solid #e3b9a8; border-radius: 9px; padding: 0 8px;
-    z-index: 2;
-  }
-  .v .today-label { writing-mode: vertical-rl; padding: 8px 0; line-height: 18px; }
-  .today-label.left { transform: translateX(-100%); }
-  .v .today-label.left { transform: translateY(-100%); }
   .empty-msg {
     position: absolute; font-family: sans-serif; font-size: 14px; color: #aaa; white-space: nowrap;
   }
@@ -320,6 +313,27 @@ function saveFilter() {
     }));
   } catch (e) {}
 }
+// сторона дорожки автора относительно оси: 'up' — сверху (слева), 'down' — снизу (справа)
+let sides = {};
+try { sides = JSON.parse(localStorage.getItem('booksSides') || '{}') || {}; } catch (e) {}
+function defaultSide(k) {
+  // по порядку рождения: каждого следующего — на ту сторону, где пока меньше книг
+  const order = Object.keys(authors).sort((a, b) => parseDate(authors[a].born).value - parseDate(authors[b].born).value);
+  const load = { up: 0, down: 0 };
+  for (const x of order) {
+    const side = load.up <= load.down ? 'up' : 'down';
+    if (x === k) return side;
+    load[side] += books.filter(bk => bk.author === x).length;
+  }
+  return 'up';
+}
+const sideOf = k => sides[k] === 'up' || sides[k] === 'down' ? sides[k] : defaultSide(k);
+function setSide(k, v) {
+  sides[k] = v;
+  try { localStorage.setItem('booksSides', JSON.stringify(sides)); } catch (e) {}
+  if (!viewport.classList.contains('hidden')) fitAll();
+  syncPanelStates();
+}
 const isVisible = b => !hiddenAuthors.has(b.author || '') && !hiddenBooks.has(bookKey(b)) && (!onlyVoiced || !!b.link);
 
 // ===============================================================
@@ -474,18 +488,20 @@ function put(cls, parent, m, c, ms, cs, text) {
   return e;
 }
 
+let axisCross = 0;   // координата оси поперёк (для центрирования при открытии)
+
 function renderTimeline() {
   track.innerHTML = '';
   track.classList.toggle('v', !isH());
   ensureRange();
   const total = Math.ceil(PAD() * 2 + (viewMax - viewMin) * scale);
-  const RULER = isH() ? 36 : 70;
-  const LBL = 20, BARH = 12, HEAD = LBL + BARH, STEM = 12, GROUP_GAP = 24, LANE_GAP = 6, GAP = isH() ? 8 : 4;
-  const maxLanes = isH() ? 8 : 3;
+  const BAND_NEG = 12, BAND_POS = isH() ? 30 : 56;     // зазор у оси: «над/слева» и «под/справа» (там подписи лет)
+  const LBL = 20, BARH = 12, HEAD = LBL + BARH, STEM = 12, GROUP_GAP = 22, LANE_GAP = 6, GAP = isH() ? 8 : 4;
+  const maxLanes = isH() ? 6 : 3;
   const mainLen = b => isH() ? chipW(b) : CHIP_H;
 
-  // ---- раскладка дорожек (автор = дорожка) ----
-  let c0 = RULER + 16;
+  // ---- раскладка дорожек: каждый автор — по свою сторону оси ----
+  const ext = { up: BAND_NEG, down: BAND_POS };
   const layouts = groups.map(g => {
     const groupW = Math.max(...g.books.map(chipW));
     const laneH = (isH() ? CHIP_H : groupW) + LANE_GAP;
@@ -500,24 +516,27 @@ function renderTimeline() {
       else items.push({ b, p, start, lane: -1, len });          // не влезла — только точка
     });
     const lanes = Math.min(maxLanes, lastEnd.length);
-    const L = { g, items, c0, lanes, laneH };
-    c0 += HEAD + (lanes ? STEM + lanes * laneH : 0) + GROUP_GAP;
+    const side = sideOf(g.key);
+    const L = { g, items, laneH, side, o0: ext[side] };
+    ext[side] += HEAD + (lanes ? STEM + lanes * laneH : 0) + GROUP_GAP;
     return L;
   });
-  const crossTotal = Math.max(c0, clientCross());
+  const half = Math.max(ext.up, ext.down, clientCross() / 2);
+  const axisC = Math.round(half);
+  const crossTotal = axisC * 2;
+  axisCross = axisC;
 
   if (isH()) { track.style.width = total + 'px'; track.style.height = crossTotal + 'px'; }
   else { track.style.width = crossTotal + 'px'; track.style.height = total + 'px'; }
 
-  // ---- линейка (липкая) ----
-  const ruler = put('ruler', track, 0, 0, total, RULER);
+  // ---- ось времени посередине ----
   const step = niceStep();
   const from = Math.ceil(viewMin / step) * step;
   for (let y = from; y <= viewMax; y += step) {
     const p = posOf(y);
     put('grid', track, p, 0, 1, crossTotal);
-    put('tick-mark', ruler, p, RULER - 9, 1, 8);
-    put('tick-label', ruler, p, 8, null, null, String(y));
+    put('tick-mark', track, p, axisC - 4, 1, 9);
+    put('tick-label', track, p, axisC + (isH() ? 9 : 12), null, null, String(y));
   }
   if (scale >= 160) {
     const labels = scale >= 480;
@@ -527,31 +546,30 @@ function renderTimeline() {
         if (v < viewMin || v > viewMax) continue;
         const p = posOf(v);
         put('grid minor', track, p, 0, 1, crossTotal);
-        put('tick-mark', ruler, p, RULER - 6, 1, 5);
-        if (labels) put('tick-label minor', ruler, p, 8, null, null, MONTHS_SHORT[m - 1]);
+        put('tick-mark', track, p, axisC - 2, 1, 5);
+        if (labels) put('tick-label minor', track, p, axisC + (isH() ? 9 : 12), null, null, MONTHS_SHORT[m - 1]);
       }
     }
   }
-  put('ruler-line', ruler, 0, RULER - 2, total, 2);
+  put('ruler-line', track, 0, axisC - 1, total, 2);
 
-  // ---- «сегодня» и будущее ----
+  // ---- «сегодня» и будущее (без подписей) ----
   const tp = posOf(TODAY);
   put('future', track, tp, 0, Math.max(0, total - tp), crossTotal);
   put('today-line', track, tp, 0, 2, crossTotal);
-  put('today-label left', ruler, tp - 8, isH() ? 8 : 6, null, null, 'сегодня · ' + TODAY_LABEL);
-  put('today-label', ruler, tp + 8, isH() ? 8 : 6, null, null, 'будущее →');
 
   if (!layouts.length) {
-    put('empty-msg', track, PAD(), RULER + 30, null, null, 'Ничего не выбрано — откройте «Авторы и книги».');
+    put('empty-msg', track, PAD(), axisC + BAND_POS + 10, null, null, 'Ничего не выбрано — откройте «Авторы и книги».');
   }
 
-  // ---- дорожки ----
-  layouts.forEach(({ g, items, c0, laneH }) => {
+  // ---- дорожки авторов ----
+  layouts.forEach(({ g, items, laneH, side, o0 }) => {
     const col = g.color;
     const holder = document.createElement('div');
     holder.style.setProperty('--c', col);
+    // cross-координата начала элемента: oEl — отступ от оси наружу, s — его размер поперёк
+    const cc = (oEl, s) => side === 'down' ? axisC + o0 + oEl : axisC - (o0 + oEl + s);
 
-    // полоса жизни автора
     let s0, s1, label, title;
     if (g.born) {
       s0 = posOf(g.born.value);
@@ -564,11 +582,10 @@ function renderTimeline() {
       title = label;
     }
     const len = Math.max(6, s1 - s0);
-    const life = put('life' + (g.died || !g.born ? '' : ' ongoing'), holder, s0, c0 + LBL, len, BARH);
-    life.style.setProperty('--c', col);
+    const life = put('life' + (g.died || !g.born ? '' : ' ongoing'), holder, s0, cc(LBL, BARH), len, BARH);
     life.title = title;
     if (label) {
-      const wrap = put('life-wrap', holder, s0, c0, len, LBL);
+      const wrap = put('life-wrap', holder, s0, cc(0, LBL), len, LBL);
       const lb = document.createElement('span');
       lb.className = 'life-label';
       lb.textContent = label;
@@ -577,26 +594,27 @@ function renderTimeline() {
 
     items.forEach(({ b, p, start, lane, len }) => {
       const tip = `${b.title} — ${b._d.label}${b.link ? '' : ' (ещё не озвучена)'}`;
-      const dot = put('dot' + (lane < 0 ? ' small' : '') + (b.link ? '' : ' soon-dot'), holder, p, c0 + LBL + BARH / 2);
+      const dot = put('dot' + (lane < 0 ? ' small' : '') + (b.link ? '' : ' soon-dot'), holder, p, cc(LBL, BARH) + BARH / 2);
       dot.title = tip;
       if (lane < 0) {
         dot.onclick = e => { e.stopPropagation(); setScale(scale * 3, p - scrollMain()); };
         return;
       }
-      const chipC = c0 + HEAD + STEM + lane * laneH;
-      const stem = put('stem', holder, p, c0 + HEAD, 1, STEM + lane * laneH);
+      const w = isH() ? CHIP_H : chipW(b);                  // размер плашки поперёк оси
+      const stemLen = STEM + lane * laneH;
+      put('stem', holder, p, cc(HEAD, stemLen), 1, stemLen);
 
       const a = document.createElement(b.link ? 'a' : 'div');
       a.className = 'chip' + (b.link ? '' : ' soon');
       if (b.link) a.href = b.link;
       a.title = tip;
       a.textContent = b.title;
-      placeEl(a, start, chipC, null, null);
+      placeEl(a, start, cc(HEAD + STEM + lane * laneH, w), null, null);
       if (isH()) { a.style.width = len + 'px'; a.style.height = CHIP_H + 'px'; }
       else { a.style.width = chipW(b) + 'px'; a.style.height = CHIP_H + 'px'; }
       holder.appendChild(a);
     });
-    holder.style.display = 'contents';      // чтобы дети наследовали --c, но позиционировались от #track
+    holder.style.display = 'contents';
     track.appendChild(holder);
   });
 }
@@ -616,7 +634,9 @@ function fitAll() {
   viewMin = baseMin; viewMax = baseMax;
   scale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, (clientMain() - PAD() * 2) / (baseMax - baseMin)));
   renderTimeline();
-  viewport.scrollLeft = 0; viewport.scrollTop = 0;
+  const cs = Math.max(0, axisCross - clientCross() / 2);       // ось — по центру экрана
+  if (isH()) { viewport.scrollLeft = 0; viewport.scrollTop = cs; }
+  else { viewport.scrollTop = 0; viewport.scrollLeft = cs; }
 }
 
 document.getElementById('zoomIn').onclick = () => setScale(scale * 1.6);
@@ -705,6 +725,15 @@ function buildPanel() {
       sum.insertAdjacentHTML('beforeend',
         `<span class="fp-sw" style="background:${authorColor[k]}"></span>
          <span class="fp-name"></span><span class="fp-count"></span><span class="fp-caret">▶</span>`);
+      const sd = document.createElement('span');
+      sd.className = 'fp-side';
+      ['up', 'down'].forEach(v => {
+        const bt = document.createElement('button');
+        bt.type = 'button'; bt.dataset.side = v;
+        bt.onclick = e => { e.preventDefault(); e.stopPropagation(); setSide(k, v); };
+        sd.appendChild(bt);
+      });
+      sum.insertBefore(sd, sum.querySelector('.fp-caret'));
       sum.querySelector('.fp-name').textContent = `${a.name} (${bd.year}–${dd ? dd.year : ''})`;
       sum.querySelector('.fp-count').textContent = voiced ? `${list.length} · озвучено ${voiced}` : `${list.length}`;
       det.appendChild(sum);
@@ -740,6 +769,12 @@ function syncPanelStates() {
     const list = books.filter(b => b.author === k);
     const cb = det.querySelector('.fp-author');
     const hiddenCount = list.filter(b => hiddenBooks.has(bookKey(b)) || (onlyVoiced && !b.link)).length;
+    det.querySelectorAll('.fp-side button').forEach(bt => {
+      const up = bt.dataset.side === 'up';
+      bt.textContent = isH() ? (up ? '▲' : '▼') : (up ? '◀' : '▶');
+      bt.title = isH() ? (up ? 'Разместить сверху от оси' : 'Разместить снизу от оси') : (up ? 'Разместить слева от оси' : 'Разместить справа от оси');
+      bt.classList.toggle('on', sideOf(k) === bt.dataset.side);
+    });
     cb.checked = !hiddenAuthors.has(k);
     cb.indeterminate = cb.checked && hiddenCount > 0;
     det.style.opacity = hiddenAuthors.has(k) ? .55 : 1;
@@ -770,6 +805,7 @@ function setOrient(o) {
   document.getElementById('orientH').classList.toggle('active', isH());
   document.getElementById('orientV').classList.toggle('active', !isH());
   try { localStorage.setItem('booksOrient', orient); } catch (e) {}
+  syncPanelStates();
   if (!viewport.classList.contains('hidden')) fitAll();
 }
 document.getElementById('orientH').onclick = () => setOrient('h');
